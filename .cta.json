@@ -1,0 +1,24 @@
+{
+  "projectName": "driply",
+  "mode": "file-router",
+  "typescript": true,
+  "packageManager": "npm",
+  "includeExamples": false,
+  "tailwind": true,
+  "addOnOptions": {},
+  "envVarValues": {
+    "VITE_CLERK_PUBLISHABLE_KEY": "pk_test_dHJ1c3Rpbmctb3Bvc3N1bS0xMi5jbGVyay5hY2NvdW50cy5kZXYk"
+  },
+  "git": true,
+  "install": true,
+  "routerOnly": false,
+  "version": 1,
+  "framework": "react",
+  "chosenAddOns": [
+    "biome",
+    "clerk",
+    "compiler",
+    "shadcn",
+    "tanstack-query"
+  ]
+}
