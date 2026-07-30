@@ -6,8 +6,9 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
-    "build": "vite build --preset vercel",
+    "dev": "vinxi dev",
+    "build": "vinxi build --preset vercel",
+    "start": "vinxi start",
     "preview": "vite preview",
     "test": "vitest run",
     "format": "biome format",
