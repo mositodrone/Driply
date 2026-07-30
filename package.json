@@ -5,10 +5,9 @@
   "imports": {
     "#/*": "./src/*"
   },
-  "scripts": {
-    "dev": "vinxi dev",
-    "build": "vinxi build --preset vercel",
-    "start": "vinxi start",
+"scripts": {
+    "dev": "vite dev --port 3000",
+    "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "format": "biome format",
