@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "vite dev --port 3000",
-    "build": "vite build",
+    "build": "vite build --preset vercel",
     "preview": "vite preview",
     "test": "vitest run",
     "format": "biome format",
@@ -37,6 +37,7 @@
     "lucide-react": "^0.577.0",
     "mongodb": "^7.5.0",
     "mongoose": "^9.8.1",
+    "nitro": "^3.0.260610-beta",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-konva": "^19.2.4",
