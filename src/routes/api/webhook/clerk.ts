@@ -9,7 +9,7 @@
 //  Setup checklist:
 //  1. npm install svix @clerk/backend
 //  2. .env:
-//       CLERK_WEBHOOK_SECRET=whsec_...   (from Clerk dashboard → Webhooks)
+//WEBHOOK_SECRET=whsec_...   (from Clerk dashboard → Webhooks)
 //       CLERK_SECRET_KEY=sk_...          (from Clerk dashboard → API Keys)
 //  3. Clerk dashboard → Webhooks → Add endpoint:
 //       URL:    https://yourdomain.com/api/webhooks/clerk
@@ -21,7 +21,11 @@ import { createClerkClient } from "@clerk/backend";
 import { createAPIFileRoute } from "@tanstack/start/api";
 import { Webhook } from "svix";
 
-import { createUser, deleteUser, updateUser } from "~/lib/actions/user.actions";
+import {
+	createUser,
+	deleteUser,
+	updateUser,
+} from "../../../lib/actions/user.actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 // Clerk sends these shapes — only the fields we actually use are typed here.
@@ -58,7 +62,7 @@ export const APIRoute = createAPIFileRoute("/api/webhooks/clerk")({
 		// ── 1. Env guard ────────────────────────────────────────────────────────
 		const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 		if (!WEBHOOK_SECRET) {
-			console.error("[clerk-webhook] CLERK_WEBHOOK_SECRET is not set");
+			console.error("[clerk-webhook] WEBHOOK_SECRET is not set");
 			return new Response("Server misconfiguration", { status: 500 });
 		}
 
