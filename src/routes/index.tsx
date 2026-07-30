@@ -22,7 +22,7 @@
 //    — Custom blended cursor (desktop only)
 // ============================================================
 
-import { SignInButton, SignUpButton, useUser } from '@clerk/tanstack-start'
+import { SignInButton, SignUpButton, UserButton, useUser } from '@clerk/tanstack-start'
 import { useGSAP } from '@gsap/react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import gsap from 'gsap'
@@ -342,7 +342,57 @@ function Nav() {
           // Invisible placeholder keeps the nav layout stable while loading
           <div style={{ width: 180, height: 36 }} />
         ) : isSignedIn ? (
-          <Link to="/dashboard" className="btn-nav-primary">Go to Studio →</Link>
+          <>
+            <Link to="/dashboard" className="btn-nav-primary">
+              Go to Studio →
+            </Link>
+
+            <UserButton
+              appearance={{
+                elements: {
+                  avatarBox: {
+                    width:        36,
+                    height:       36,
+                    borderRadius: '10px',
+                    border:       '2px solid rgba(255,91,58,0.5)',
+                    transition:   'border-color 0.2s',
+                  },
+                  avatarBoxHover: {
+                    borderColor: '#FF5B3A',
+                  },
+                  userButtonPopoverCard: {
+                    borderRadius:    '16px',
+                    background:      '#1A1A1A',
+                    border:          '1px solid rgba(255,255,255,0.08)',
+                    boxShadow:       '0 16px 48px rgba(0,0,0,0.5)',
+                  },
+                  userButtonPopoverActions: {
+                    background: 'transparent',
+                  },
+                  userButtonPopoverActionButton: {
+                    color:        'rgba(255,255,255,0.7)',
+                    borderRadius: '10px',
+                    fontSize:     '0.85rem',
+                  },
+                  userButtonPopoverActionButtonArrow: {
+                    color: 'rgba(255,255,255,0.3)',
+                  },
+                  userButtonPopoverActionButtonText: {
+                    color: 'rgba(255,255,255,0.7)',
+                  },
+                  userButtonPopoverFooter: {
+                    display: 'none',  // hides "Secured by Clerk" footer
+                  },
+                },
+                variables: {
+                  colorPrimary:    '#FF5B3A',
+                  colorBackground: '#1A1A1A',
+                  colorText:       '#F8F5EF',
+                  borderRadius:    '10px',
+                },
+              }}
+            />
+          </>
         ) : (
           <>
             <SignInButton mode="modal">
