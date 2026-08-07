@@ -18,6 +18,8 @@ interface LeftPanelProps {
   toolsEnabled?:    boolean
   onUndo?:          () => void
   onRedo?:          () => void
+  canUndo?:         boolean
+  canRedo?:         boolean
   onMoveUp?:        (id: string) => void
   onMoveDown?:      (id: string) => void
   onMoveToFront?:   (id: string) => void
@@ -35,7 +37,7 @@ export function LeftPanel({
   view, setView, elements, selectedId, setSelectedId,
   onDeleteSelected, onAddText, onAddShape, fileInputRef,
   onOpenSelector, activeGarment, toolsEnabled = true,
-  onUndo, onRedo,
+  onUndo, onRedo, canUndo = false, canRedo = false,
   onMoveUp, onMoveDown, onMoveToFront, onMoveToBack, onToggleLock,
 }: LeftPanelProps) {
   function popBtn(e: React.MouseEvent<HTMLButtonElement>) {
@@ -145,13 +147,13 @@ export function LeftPanel({
       {/* ── Undo / Redo ── */}
       <div className="px-4 py-2 border-b border-white/[0.06] flex gap-2">
         <button
-          className="flex-1 py-1.5 rounded-lg text-[0.72rem] text-white/40 hover:text-white/70 border border-white/[0.06] hover:border-white/20 transition-colors disabled:opacity-20"
-          onClick={onUndo} disabled={!onUndo}
+          className="flex-1 py-1.5 rounded-lg text-[0.72rem] text-white/40 hover:text-white/70 border border-white/[0.06] hover:border-white/20 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+          onClick={onUndo} disabled={!canUndo}
           title="Undo (Ctrl+Z)"
         >↩ Undo</button>
         <button
-          className="flex-1 py-1.5 rounded-lg text-[0.72rem] text-white/40 hover:text-white/70 border border-white/[0.06] hover:border-white/20 transition-colors disabled:opacity-20"
-          onClick={onRedo} disabled={!onRedo}
+          className="flex-1 py-1.5 rounded-lg text-[0.72rem] text-white/40 hover:text-white/70 border border-white/[0.06] hover:border-white/20 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+          onClick={onRedo} disabled={!canRedo}
           title="Redo (Ctrl+Y)"
         >↪ Redo</button>
       </div>

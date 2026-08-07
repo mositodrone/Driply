@@ -8,9 +8,10 @@ interface ImageNodeProps {
   isSelected: boolean
   onSelect: () => void
   onChange: (attrs: Partial<DriplyEl>) => void
+  onContextMenu?: (x: number, y: number) => void
 }
 
-export function ImageNode({ el, isSelected, onSelect, onChange }: ImageNodeProps) {
+export function ImageNode({ el, isSelected, onSelect, onChange, onContextMenu }: ImageNodeProps) {
   const [img] = useImage(el.src ?? '', 'anonymous')
   const nodeRef = useRef<any>(null)
   const trRef = useRef<any>(null)
@@ -28,6 +29,12 @@ export function ImageNode({ el, isSelected, onSelect, onChange }: ImageNodeProps
         x={el.x} y={el.y}
         width={el.width ?? 120} height={el.height ?? 120}
         draggable onClick={onSelect} onTap={onSelect}
+        onContextMenu={e => {
+          e.evt.preventDefault()
+          e.cancelBubble = true // don't let Stage's onContextMenu dismiss this
+          onSelect()
+          onContextMenu?.(e.evt.clientX, e.evt.clientY)
+        }}
         onDragEnd={e => onChange({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
           const n = nodeRef.current

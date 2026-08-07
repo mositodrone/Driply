@@ -58,9 +58,9 @@ const SWATCHES = [
 ]
 
 const STATS = [
-  { end: 50,  suffix: '+', label: 'Garment types'    },
-  { end: 100, suffix: 'K+', label: 'Designs created' },
-  { end: 24,  suffix: 'h',  label: 'Quote turnaround' },
+  { end: 6,   suffix: '',   label: 'Garment types'     },
+  { end: 10,  suffix:'+',   label: 'Color options'     },
+  { end: 24,  suffix: 'h',  label: 'Quote turnaround'  },
 ]
 
 const PROCESS_STEPS = [
@@ -84,27 +84,27 @@ const PROCESS_STEPS = [
 const FEATURES = [
   {
     icon: '🖋', title: 'Text & Typography', color: '#0E0E0E', text: 'white',
-    body: 'Hundreds of fonts. Size, spacing, weight, color — every dimension controlled. Paste your own or pick from curated pairings.',
-    chips: ['Syne Display', 'DM Sans', 'Bebas Neue', 'Playfair', '+ 200 more'],
+    body: 'Add text in any style — size, weight, color, spacing all controlled directly on the canvas.',
+    chips: ['Syne', 'DM Sans', 'Bebas Neue', 'Playfair'],
   },
   {
     icon: '🎨', title: 'Color System', color: '#C8F135', text: '#0E0E0E',
-    body: 'Hex, Pantone, or eyedropper. Unlimited palettes. Color-match across the full garment piece — collar, cuffs, body.',
+    body: 'Pick from a curated palette or enter any hex code. Color previews update live on the garment.',
     chips: [],
   },
   {
-    icon: '🖼', title: 'Asset Import', color: '#F2EFEA', text: '#0E0E0E',
-    body: 'Drop in SVGs, PNGs, illustrations. Auto-vectorization. AI background removal. Your brand, your rules.',
+    icon: '🖼', title: 'Image Upload', color: '#F2EFEA', text: '#0E0E0E',
+    body: 'Upload your own PNG or image. Place, resize, rotate — your graphic on any garment in seconds.',
     chips: [],
   },
   {
     icon: '✦', title: 'Live Preview', color: '#FF5B3A', text: 'white',
-    body: 'Real-time garment mockup. Every edit reflects instantly — no guessing how it prints.',
+    body: 'Every edit reflects on the garment mockup instantly. Front, back — switch views without leaving the canvas.',
     chips: [],
   },
   {
     icon: '⚡', title: 'Bulk Orders', color: '#7B5BFF', text: 'white',
-    body: 'Size runs, color splits, mixed quantities — all in one order. Built for teams, clubs, brands and agencies.',
+    body: 'Size runs, color splits, quantity breakdowns — all configured before checkout. Built for teams and brands.',
     chips: [],
   },
 ]
@@ -120,21 +120,35 @@ const GARMENTS = [
   { emoji: '🎽', name: 'Jerseys',      sub: 'Sports & club',       bg: '#E8F0FF' },
 ]
 
-const TESTIMONIALS = [
+// ── Who Driply is built for — replaces fabricated testimonials ───────────────
+const USE_CASES = [
   {
-    quote: 'We ordered custom hoodies for our whole team. The dashboard is incredibly intuitive — design locked in under 20 minutes.',
-    name: 'Adaeze K.', role: 'Startup founder, Lagos',
-    initials: 'AK', color: '#C8F135', from: 'left',
+    icon:  '🏢',
+    title: 'Startups & Teams',
+    body:  'Branded merch for your crew without the agency middleman. Design it, set quantities, done.',
+    color: '#C8F135',
+    text:  '#0E0E0E',
   },
   {
-    quote: 'The color preview is a game changer. What you see really is what you get. First batch of caps came out exactly like the mockup.',
-    name: 'Marcus R.', role: 'Streetwear brand, London',
-    initials: 'MR', color: '#3ABAFF', from: 'bottom',
+    icon:  '👟',
+    title: 'Streetwear Brands',
+    body:  'Drop-ready custom pieces. Color splits, size runs, consistent quality — every season.',
+    color: '#3ABAFF',
+    text:  '#0E0E0E',
   },
   {
-    quote: 'Our club uses Driply every season for jerseys. The quantity breakdown and color splits save us hours of back-and-forth.',
-    name: 'Yemi B.', role: 'Club manager, Abuja',
-    initials: 'YB', color: '#FF5B3A', from: 'right',
+    icon:  '🏆',
+    title: 'Sports Clubs',
+    body:  'Jerseys, training gear, club kits. Bulk quantities with per-player size breakdowns in one order.',
+    color: '#FF5B3A',
+    text:  'white',
+  },
+  {
+    icon:  '🎓',
+    title: 'Schools & Events',
+    body:  'Class hoodies, event tees, conference merch. Fast turnaround, minimum fuss.',
+    color: '#7B5BFF',
+    text:  'white',
   },
 ]
 
@@ -152,17 +166,155 @@ function useLenis() {
 
     lenis.on('scroll', ScrollTrigger.update)
 
-    gsap.ticker.add((time) => {
-      lenis.raf(time * 1000)
-    })
+    // Store the ticker reference so cleanup can remove the exact same function
+    const ticker = (time: number) => lenis.raf(time * 1000)
+    gsap.ticker.add(ticker)
     gsap.ticker.lagSmoothing(0)
+
+    // Intercept every same-page anchor click on the document — this handles
+    // the nav links, the scroll-indicator, the CTA buttons, anything with
+    // href="#section", without touching any of those components.
+    const handleAnchorClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest('a[href^="#"]') as HTMLAnchorElement | null
+      if (!anchor) return
+      const href = anchor.getAttribute('href')
+      if (!href || href === '#') return   // bare # does nothing
+      e.preventDefault()
+      lenis.scrollTo(href, {
+        duration: 1.2,
+        easing: (t: number) => 1 - Math.pow(1 - t, 4),   // quartic ease-out
+      })
+    }
+
+    document.addEventListener('click', handleAnchorClick)
 
     return () => {
       lenis.destroy()
-      gsap.ticker.remove((time) => lenis.raf(time * 1000))
+      gsap.ticker.remove(ticker)                           // same ref — actually removes it
+      document.removeEventListener('click', handleAnchorClick)
     }
   }, [])
 }
+
+
+const VIDEO_URL = '/demo.mp4'   // ← replace with your actual video URL
+
+function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const cardRef    = useRef<HTMLDivElement>(null)
+  const videoRef   = useRef<HTMLVideoElement>(null)
+
+  // Entrance
+  useEffect(() => {
+    if (!open || !overlayRef.current || !cardRef.current) return
+    gsap.fromTo(overlayRef.current,
+      { opacity: 0 },
+      { opacity: 1, duration: 0.3, ease: 'power2.out' }
+    )
+    gsap.fromTo(cardRef.current,
+      { scale: 0.9, opacity: 0, y: 24 },
+      { scale: 1,   opacity: 1, y: 0, duration: 0.45, ease: 'back.out(1.8)' }
+    )
+    videoRef.current?.play().catch(() => {})
+  }, [open])
+
+  // Exit — animate out then call onClose
+  function handleClose() {
+    if (!overlayRef.current || !cardRef.current) { onClose(); return }
+    videoRef.current?.pause()
+    gsap.to(cardRef.current,    { scale: 0.9, opacity: 0, y: 16, duration: 0.25, ease: 'power2.in' })
+    gsap.to(overlayRef.current, {
+      opacity: 0, duration: 0.3, ease: 'power2.in',
+      onComplete: onClose,
+    })
+  }
+
+  // Escape key
+  useEffect(() => {
+    if (!open) return
+    const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose() }
+    window.addEventListener('keydown', fn)
+    return () => window.removeEventListener('keydown', fn)
+  }, [open])
+
+  if (!open) return null
+
+  return (
+    <div
+      ref={overlayRef}
+      onClick={handleClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(0,0,0,0.82)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '2rem',
+        backdropFilter: 'blur(8px)',
+      }}
+    >
+      <div
+        ref={cardRef}
+        onClick={e => e.stopPropagation()}    // prevent backdrop close when clicking card
+        style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: 900,
+          borderRadius: 20,
+          overflow: 'hidden',
+          background: '#0E0E0E',
+          boxShadow: '0 40px 100px rgba(0,0,0,0.7)',
+          border: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        {/* Close button */}
+        <button
+          onClick={handleClose}
+          style={{
+            position: 'absolute', top: 14, right: 14, zIndex: 10,
+            width: 36, height: 36, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            color: 'white', fontSize: '1rem',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            lineHeight: 1,
+            transition: 'background 0.2s',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.2)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)' }}
+        >
+          ✕
+        </button>
+
+        {/* Video — 16:9 aspect ratio */}
+        <div style={{ aspectRatio: '16/9', background: '#000' }}>
+          <video
+            ref={videoRef}
+            src={VIDEO_URL}
+            controls
+            playsInline
+            style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }}
+          />
+        </div>
+
+        {/* Optional caption strip */}
+        <div style={{
+          padding: '1rem 1.5rem',
+          display: 'flex', alignItems: 'center', gap: '0.75rem',
+        }}>
+          <span style={{
+            fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em',
+            textTransform: 'uppercase', color: '#C8F135',
+          }}>
+            ▶ Driply Studio
+          </span>
+          <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)' }}>
+            See how to design your first garment in under 2 minutes
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 // ─── Custom cursor (desktop only) ─────────────────────────────────────────────
 //
@@ -237,31 +389,147 @@ function CustomCursor() {
   )
 }
 
-// ─── Shirt SVG ────────────────────────────────────────────────────────────────
+// ─── ShirtSVG ─────────────────────────────────────────────────────────────────
+//
+// Fix: foreground elements (dashed border, text labels, logo badge) now adapt
+// automatically to the shirt color using a perceived-luminance check.
+//
+// The W3C luminance formula weights RGB channels by how the human eye
+// perceives brightness — green contributes the most (~59%), red next (~30%),
+// blue least (~11%). A value above 0.5 means the color reads as "light" and
+// needs dark overlays; below 0.5 it reads as "dark" and needs light overlays.
+//
+// Affected elements:
+//   • Dashed print-area border  → was rgba(255,255,255,0.55), now adaptive
+//   • "YOUR / DESIGN / HERE"    → was rgba(255,255,255,0.92), now adaptive
+//   • Logo badge circle fill    → was rgba(255,255,255,0.12), now adaptive
+//   • Logo "D" character        → was white, now adaptive
+//
+// No changes to the collar, sleeve shadows (rgba(0,0,0,0.08)) — those work
+// on any background since they're very subtle dark overlays.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Perceived luminance of a hex color. Returns 0 (dark) – 1 (light). */
+function getLuminance(hex: string): number {
+  // Strip the leading #, handle 3- and 6-digit formats
+  const raw = hex.replace('#', '')
+  const full = raw.length === 3
+    ? raw.split('').map(c => c + c).join('')
+    : raw
+
+  const r = parseInt(full.slice(0, 2), 16) / 255
+  const g = parseInt(full.slice(2, 4), 16) / 255
+  const b = parseInt(full.slice(4, 6), 16) / 255
+
+  return 0.299 * r + 0.587 * g + 0.114 * b
+}
+
+/**
+ * Returns the appropriate foreground color for overlaid text/borders,
+ * given the shirt's background hex value.
+ *
+ * Returns an object so callers can apply different opacities per element
+ * without recomputing each time.
+ */
+function getForeground(bg: string): { base: string; isLight: boolean } {
+  const light = getLuminance(bg) > 0.5
+  return { base: light ? '#0E0E0E' : '#FFFFFF', isLight: light }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Replace the existing ShirtSVG function in index.tsx with this version.
+// The prop signature is identical — no call sites need changing.
+// ─────────────────────────────────────────────────────────────────────────────
 function ShirtSVG({ color = '#2ECEFF', collar = '#1AAFEA', size = 340 }) {
+  const { base, isLight } = getForeground(color)
+
+  // Foreground tokens — all derived from a single luminance check
+  const fg = {
+    // Dashed border around the print area
+    border: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.55)',
+    // "YOUR / DESIGN / HERE" text labels
+    text:   isLight ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.92)',
+    // Small logo badge circle
+    badge:  isLight ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.12)',
+    // "D" character inside the badge
+    logoD:  base,
+  }
+
   return (
-    <svg viewBox="0 0 340 400" width={size} xmlns="http://www.w3.org/2000/svg"
-      style={{ filter: 'drop-shadow(0 32px 64px rgba(0,0,0,0.35))', transition: 'all 0.4s ease' }}>
-      <path d="M85,90 L30,130 L60,160 L80,148 L80,350 L260,350 L260,148 L280,160 L310,130 L255,90 C240,105 220,115 170,115 C120,115 100,105 85,90 Z"
-        fill={color} style={{ transition: 'fill 0.4s ease' }}/>
-      <path d="M155,90 C155,90 163,108 170,115 C177,108 185,90 185,90 L255,90 C240,105 220,115 170,115 C120,115 100,105 85,90 L140,75 C145,82 155,90 155,90 Z"
-        fill={collar} style={{ transition: 'fill 0.4s ease' }}/>
-      <path d="M30,130 L60,160 L80,148 L80,130 Z"  fill="rgba(0,0,0,0.08)"/>
-      <path d="M310,130 L280,160 L260,148 L260,130 Z" fill="rgba(0,0,0,0.08)"/>
-      <rect x="118" y="165" width="104" height="82" rx="6"
-        fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="1.5" strokeDasharray="6,4"/>
-      <text x="170" y="198" textAnchor="middle" fontFamily="Syne,sans-serif"
-        fontWeight="800" fontSize="13" fill="rgba(255,255,255,0.92)" letterSpacing="2">YOUR</text>
-      <text x="170" y="216" textAnchor="middle" fontFamily="Syne,sans-serif"
-        fontWeight="800" fontSize="13" fill="rgba(255,255,255,0.92)" letterSpacing="2">DESIGN</text>
-      <text x="170" y="234" textAnchor="middle" fontFamily="Syne,sans-serif"
-        fontWeight="800" fontSize="13" fill="rgba(255,255,255,0.92)" letterSpacing="2">HERE</text>
-      <circle cx="232" cy="176" r="13" fill="rgba(255,255,255,0.12)"/>
-      <text x="232" y="180" textAnchor="middle" fontFamily="Syne,sans-serif"
-        fontWeight="800" fontSize="8" fill="white">D</text>
+    <svg
+      viewBox="0 0 340 400"
+      width={size}
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ filter: 'drop-shadow(0 32px 64px rgba(0,0,0,0.35))', transition: 'all 0.4s ease' }}
+    >
+      {/* ── Body ── */}
+      <path
+        d="M85,90 L30,130 L60,160 L80,148 L80,350 L260,350 L260,148 L280,160 L310,130 L255,90 C240,105 220,115 170,115 C120,115 100,105 85,90 Z"
+        fill={color}
+        style={{ transition: 'fill 0.4s ease' }}
+      />
+
+      {/* ── Collar ── */}
+      <path
+        d="M155,90 C155,90 163,108 170,115 C177,108 185,90 185,90 L255,90 C240,105 220,115 170,115 C120,115 100,105 85,90 L140,75 C145,82 155,90 155,90 Z"
+        fill={collar}
+        style={{ transition: 'fill 0.4s ease' }}
+      />
+
+      {/* ── Sleeve shadows (always dark — subtle on any bg) ── */}
+      <path d="M30,130 L60,160 L80,148 L80,130 Z"   fill="rgba(0,0,0,0.08)" />
+      <path d="M310,130 L280,160 L260,148 L260,130 Z" fill="rgba(0,0,0,0.08)" />
+
+      {/* ── Print-area dashed border — contrast-aware ── */}
+      <rect
+        x="118" y="165" width="104" height="82" rx="6"
+        fill="none"
+        stroke={fg.border}
+        strokeWidth="1.5"
+        strokeDasharray="6,4"
+        style={{ transition: 'stroke 0.4s ease' }}
+      />
+
+      {/* ── Text labels — contrast-aware ── */}
+      <text
+        x="170" y="198" textAnchor="middle"
+        fontFamily="Syne,sans-serif" fontWeight="800" fontSize="13"
+        fill={fg.text} letterSpacing="2"
+        style={{ transition: 'fill 0.4s ease' }}
+      >
+        YOUR
+      </text>
+      <text
+        x="170" y="216" textAnchor="middle"
+        fontFamily="Syne,sans-serif" fontWeight="800" fontSize="13"
+        fill={fg.text} letterSpacing="2"
+        style={{ transition: 'fill 0.4s ease' }}
+      >
+        DESIGN
+      </text>
+      <text
+        x="170" y="234" textAnchor="middle"
+        fontFamily="Syne,sans-serif" fontWeight="800" fontSize="13"
+        fill={fg.text} letterSpacing="2"
+        style={{ transition: 'fill 0.4s ease' }}
+      >
+        HERE
+      </text>
+
+      {/* ── Logo badge — contrast-aware ── */}
+      <circle cx="232" cy="176" r="13" fill={fg.badge} style={{ transition: 'fill 0.4s ease' }} />
+      <text
+        x="232" y="180" textAnchor="middle"
+        fontFamily="Syne,sans-serif" fontWeight="800" fontSize="8"
+        fill={fg.logoD}
+        style={{ transition: 'fill 0.4s ease' }}
+      >
+        D
+      </text>
     </svg>
   )
 }
+
 
 // ─── Split text into char spans ───────────────────────────────────────────────
 function SplitChars({ text, className = '', wrapClass = '' }: {
@@ -300,11 +568,21 @@ function Nav() {
     })
 
     // Morph nav on scroll past hero
-    ScrollTrigger.create({
-      trigger: '#hero',
-      start: 'bottom 80px',
-      onEnter:    () => setDark(false),
-      onLeaveBack:() => setDark(true),
+    requestAnimationFrame(() => {
+      const NAV_HEIGHT = navRef.current?.offsetHeight ?? 72
+
+      document.querySelectorAll<HTMLElement>('[data-nav-bg]').forEach(section => {
+        const bg      = section.dataset.navBg ?? '#0E0E0E'
+        const isDark  = getLuminance(bg) <= 0.5   // dark bg → need white text
+
+        ScrollTrigger.create({
+          trigger:    section,
+          start:      `top ${NAV_HEIGHT}px`,   // when section top enters nav zone
+          end:        `bottom ${NAV_HEIGHT}px`, // when section bottom leaves nav zone
+          onEnter:     () => setDark(isDark),
+          onEnterBack: () => setDark(isDark),
+        })
+      })
     })
   }, { scope: navRef })
 
@@ -551,6 +829,7 @@ function Hero() {
 
   return (
     <section ref={sectionRef} id="hero"
+      data-nav-bg="#0E0E0E"
       className="hero-section"
       style={{ background: '#0E0E0E', minHeight: '100vh' }}>
 
@@ -622,11 +901,16 @@ function Hero() {
               </SignUpButton>
             </div>
             <div className="hero-cta-item">
-              <button className="btn-hero-ghost">
-                <span className="play-circle">▶</span>
-                Watch demo
-              </button>
-            </div>
+  <button
+    className="btn-hero-ghost"
+    onClick={() => setDemoOpen(true)}
+    onMouseEnter={e => gsap.to(e.currentTarget, { scale: 1.04, duration: 0.2, ease: 'power2.out' })}
+    onMouseLeave={e => gsap.to(e.currentTarget, { scale: 1, duration: 0.3, ease: 'driply-pop' })}
+  >
+    <span className="play-circle">▶</span>
+    Watch demo
+  </button>
+</div>
           </div>
 
           {/* Stats */}
@@ -732,7 +1016,7 @@ function Marquee() {
   const doubled = [...MARQUEE_ITEMS, ...MARQUEE_ITEMS]
 
   return (
-    <div className="marquee-section" style={{ background: '#0E0E0E', overflow: 'hidden', padding: '1rem 0', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+    <div className="marquee-section" data-nav-bg="#0E0E0E" style={{ background: '#0E0E0E', overflow: 'hidden', padding: '1rem 0',  borderTop: '1px solid rgba(255,255,255,0.06)' }}>
       <div ref={trackRef} className="marquee-inner">
         {doubled.map((item, i) => (
           <span key={i} className="marquee-chip">
@@ -798,7 +1082,7 @@ function Process() {
   }, { scope: sectionRef })
 
   return (
-    <section ref={sectionRef} id="process" className="process-section">
+    <section ref={sectionRef} data-nav-bg="#F8F5EF" id="process" className="process-section">
 
       {/* Left column — number + progress */}
       <div className="process-left">
@@ -867,7 +1151,7 @@ function Features() {
   }, { scope: sectionRef })
 
   return (
-    <section ref={sectionRef} id="features" className="features-section">
+    <section ref={sectionRef} id="features" data-nav-bg="#F8F5EF" className="features-section">
 
       <div className="features-heading-wrap">
         <div className="sect-eyebrow">What you get</div>
@@ -970,7 +1254,7 @@ function Garments() {
   const title = 'Every garment.'
 
   return (
-    <section ref={sectionRef} id="garments"
+    <section ref={sectionRef} id="garments" data-nav-bg="#F8F5EF"
       style={{ background: '#F8F5EF', overflow: 'hidden' }}>
 
       <div style={{ padding: '5rem 4rem 2rem' }}>
@@ -1062,7 +1346,7 @@ function DashPreview() {
   const heading = 'The dashboard'
 
   return (
-    <section ref={sectionRef} style={{ padding: '7rem 4rem', background: '#F8F5EF' }}>
+    <section ref={sectionRef} data-nav-bg="#F8F5EF" style={{ padding: '7rem 4rem', background: '#F8F5EF' }}>
       <div className="sect-eyebrow">Design studio</div>
       <div className="dash-preview-heading" style={{ overflow: 'hidden', marginBottom: '0.75rem' }}>
         <h2 className="dash-h2">
@@ -1206,86 +1490,115 @@ function DashPreview() {
   )
 }
 
-// ─── TESTIMONIALS (3D fly-in from different directions) ────────────────────────
+// ─── WHO IT'S FOR ──────────────────────────────────────────────────────────────
 function Testimonials() {
   const sectionRef = useRef<HTMLElement>(null)
 
   useGSAP(() => {
-    gsap.from('.testi-heading .th-char', {
+    gsap.from('.wif-heading .wif-char', {
       yPercent: 100, stagger: 0.025, duration: 0.7, ease: 'power4.out',
       scrollTrigger: { trigger: sectionRef.current, start: 'top 80%', once: true },
     })
-
-    TESTIMONIALS.forEach((t, i) => {
-      const fromX = t.from === 'left' ? -80 : t.from === 'right' ? 80 : 0
-      const fromY = t.from === 'bottom' ? 80 : 0
-      gsap.from(`[data-testi="${i}"]`, {
-        x:          fromX,
-        y:          fromY,
-        opacity:    0,
-        rotationY:  t.from === 'left' ? -15 : t.from === 'right' ? 15 : 0,
-        rotationX:  t.from === 'bottom' ? 10 : 0,
-        scale:      0.92,
-        duration:   0.75,
-        delay:      i * 0.12,
-        ease:       'power4.out',
-        scrollTrigger: {
-          trigger: `[data-testi="${i}"]`,
-          start:   'top 85%',
-          once:    true,
-        },
-      })
+    gsap.from('.wif-card', {
+      y: 40, opacity: 0, stagger: 0.1, duration: 0.6, ease: 'power3.out',
+      scrollTrigger: { trigger: '.wif-grid', start: 'top 82%', once: true },
     })
   }, { scope: sectionRef })
 
-  const heading = 'They designed.'
+  const heading = 'Built for your kind of order.'
 
   return (
-    <section ref={sectionRef} style={{ background: '#0E0E0E', padding: '7rem 4rem' }}>
-      <div className="sect-eyebrow" style={{ color: 'rgba(255,255,255,0.35)' }}>Real users</div>
-      <div className="testi-heading" style={{ overflow: 'hidden', marginBottom: '4rem' }}>
+    <section ref={sectionRef} data-nav-bg="#0E0E0E" style={{ background: '#0E0E0E', padding: '7rem 4rem' }}>
+      <div className="sect-eyebrow" style={{ color: 'rgba(255,255,255,0.35)' }}>Who it's for</div>
+
+      <div className="wif-heading" style={{ overflow: 'hidden', marginBottom: '4rem' }}>
         <h2 style={{
           fontFamily: 'Syne,sans-serif', fontWeight: 800, color: 'white',
           fontSize: 'clamp(2.5rem,4vw,3.75rem)', letterSpacing: '-0.035em', lineHeight: 1,
         }}>
-          {heading.split('').map((c,i)=>(
-            <span key={i} className="th-char" style={{display:'inline-block'}}>
-              {c===' '?'\u00A0':c}
+          {heading.split('').map((c, i) => (
+            <span key={i} className="wif-char" style={{ display: 'inline-block' }}>
+              {c === ' ' ? '\u00A0' : c}
             </span>
           ))}
-          <br/>
-          <span style={{ color: '#C8F135' }}>They loved it.</span>
         </h2>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1.5rem' }}>
-        {TESTIMONIALS.map((t, i) => (
-          <div key={i} data-testi={i}
-            style={{ background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',
-              borderRadius:20,padding:'2rem',transformStyle:'preserve-3d',cursor:'default' }}
-            onMouseEnter={e=>gsap.to(e.currentTarget,{y:-8,scale:1.02,duration:0.3,ease:'power2.out',
-              boxShadow:'0 20px 40px rgba(0,0,0,0.3)'})}
-            onMouseLeave={e=>gsap.to(e.currentTarget,{y:0,scale:1,duration:0.3,ease:'power2.out',
-              boxShadow:'none'})}>
-            <div style={{ color:'#C8F135',letterSpacing:'0.1em',marginBottom:'1rem' }}>★★★★★</div>
-            <p style={{ fontSize:'0.95rem',fontWeight:300,lineHeight:1.7,
-              color:'rgba(255,255,255,0.75)',marginBottom:'1.5rem',fontStyle:'italic' }}>
-              "{t.quote}"
-            </p>
-            <div style={{ display:'flex',alignItems:'center',gap:'0.75rem' }}>
-              <div style={{ width:38,height:38,borderRadius:'50%',flexShrink:0,
-                background:t.color,display:'flex',alignItems:'center',justifyContent:'center',
-                fontSize:'0.85rem',fontWeight:700,color:'#0E0E0E' }}>
-                {t.initials}
-              </div>
-              <div>
-                <div style={{ fontSize:'0.83rem',fontWeight:500,color:'rgba(255,255,255,0.85)' }}>{t.name}</div>
-                <div style={{ fontSize:'0.73rem',color:'rgba(255,255,255,0.35)' }}>{t.role}</div>
-              </div>
+      <div className="wif-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: '1.25rem',
+      }}>
+        {USE_CASES.map((u, i) => (
+          <div key={i} className="wif-card"
+            style={{
+              background:   'rgba(255,255,255,0.04)',
+              border:       '1px solid rgba(255,255,255,0.07)',
+              borderRadius:  20,
+              padding:      '2rem 1.75rem',
+              cursor:       'default',
+              transition:   'transform 0.25s, border-color 0.25s',
+            }}
+            onMouseEnter={e => gsap.to(e.currentTarget, { y: -6, duration: 0.25, ease: 'power2.out', borderColor: `${u.color}55` })}
+            onMouseLeave={e => gsap.to(e.currentTarget, { y:  0, duration: 0.3,  ease: 'power2.out', borderColor: 'rgba(255,255,255,0.07)' })}
+          >
+            {/* Icon pill */}
+            <div style={{
+              display:        'inline-flex',
+              alignItems:     'center',
+              justifyContent: 'center',
+              width:           48,
+              height:          48,
+              borderRadius:    14,
+              background:     `${u.color}18`,
+              fontSize:        '1.5rem',
+              marginBottom:   '1.25rem',
+            }}>
+              {u.icon}
             </div>
+
+            <h3 style={{
+              fontFamily:    'Syne,sans-serif',
+              fontWeight:     700,
+              fontSize:      '1.1rem',
+              color:          'white',
+              letterSpacing: '-0.02em',
+              marginBottom:  '0.6rem',
+            }}>
+              {u.title}
+            </h3>
+
+            <p style={{
+              fontSize:   '0.875rem',
+              fontWeight:  300,
+              lineHeight:  1.65,
+              color:      'rgba(255,255,255,0.5)',
+            }}>
+              {u.body}
+            </p>
+
+            {/* Accent line at bottom */}
+            <div style={{
+              width:        32,
+              height:        3,
+              borderRadius:  99,
+              background:    u.color,
+              marginTop:    '1.5rem',
+            }}/>
           </div>
         ))}
       </div>
+
+      {/* Honest early-stage note */}
+      <p style={{
+        marginTop:     '3.5rem',
+        fontSize:      '0.82rem',
+        color:         'rgba(255,255,255,0.2)',
+        textAlign:     'center',
+        letterSpacing: '0.02em',
+      }}>
+        Driply is actively growing — your order helps shape what comes next.
+      </p>
     </section>
   )
 }
@@ -1323,7 +1636,7 @@ function CTA() {
   const heading = 'YOUR DRIP, STARTS HERE.'
 
   return (
-    <section ref={sectionRef}
+    <section ref={sectionRef} data-nav-bg="#F8F5EF"
       style={{ padding:'8rem 4rem',textAlign:'center',background:'#F8F5EF',position:'relative',overflow:'hidden' }}>
 
       {/* Big decorative blobs */}
@@ -1333,14 +1646,24 @@ function CTA() {
         opacity:0.09,bottom:-100,right:0,filter:'blur(80px)',pointerEvents:'none' }}/>
 
       <div className="cta-heading" style={{ overflow:'hidden',marginBottom:'1.5rem' }}>
-        <h2 style={{ fontFamily:'Syne,sans-serif',fontWeight:800,
-          fontSize:'clamp(2.5rem,6vw,5rem)',letterSpacing:'-0.04em',lineHeight:0.95,color:'#0E0E0E' }}>
-          {heading.split('').map((c,i)=>(
-            <span key={i} className="ctah-char" style={{ display:'inline-block' }}>
-              {c===' '?'\u00A0':c}
-            </span>
-          ))}
-        </h2>
+        <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800,
+  fontSize:'clamp(2.5rem,6vw,5rem)', letterSpacing:'-0.04em',
+  lineHeight:0.95, color:'#0E0E0E' }}>
+  {heading.split(' ').map((word, wi, arr) => (
+    <span key={wi} style={{ display:'inline-block', whiteSpace:'nowrap' }}>
+      {word.split('').map((c, ci) => (
+        <span key={ci} className="ctah-char" style={{ display:'inline-block' }}>
+          {c}
+        </span>
+      ))}
+      {wi < arr.length - 1 && (
+        <span className="ctah-char" style={{ display:'inline-block' }}>
+          {'\u00A0'}
+        </span>
+      )}
+    </span>
+  ))}
+</h2>
       </div>
 
       <p className="cta-sub" style={{ fontSize:'1.05rem',fontWeight:300,color:'#3A3A3A',
@@ -1389,7 +1712,7 @@ function Footer() {
   }
 
   return (
-    <footer style={{ background: '#0E0E0E', padding: '4rem 4rem 2.5rem' }}>
+    <footer style={{ background: '#0E0E0E', padding: '4rem 4rem 2.5rem' }} data-nav-bg="#0E0E0E">
       <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:'3rem',marginBottom:'3.5rem' }}>
         <div>
           <div style={{ fontFamily:'Syne,sans-serif',fontSize:'1.5rem',fontWeight:800,
@@ -1543,6 +1866,121 @@ export default function DriplyLanding() {
           display: grid; grid-template-columns: 1fr 1fr;
           min-height: 100vh; padding-top: 7rem; position: relative; z-index: 2;
         }
+/* ── Tablet (≤1024px) ────────────────────────────────────────────────────────
+        @media (max-width: 1024px) {
+          .hero-inner {
+            gap: 1.5rem;
+            padding-left: 2.5rem;
+            padding-right: 2.5rem;
+          }
+
+          .hero-shirt-wrap svg {
+            width: 300px !important;
+          }
+
+          .hero-badge {
+            font-size: 0.68rem;
+            padding: 0.4rem 0.75rem;
+          }
+        }
+
+/* ── Mobile (≤768px) — the main layout change ────────────────────────────────
+        @media (max-width: 768px) {
+          .hero-inner {
+            flex-direction: column;        /* if using flex */
+            grid-template-columns: 1fr;   /* if using grid — harmless if not */
+            align-items: center;
+            padding: 6rem 1.5rem 3rem;
+            gap: 3rem;
+            min-height: 100svh;            /* svh respects mobile browser chrome */
+          }
+
+          .hero-left-col {
+            width: 100%;
+            max-width: 100%;
+            order: 1;
+            /* Keep text left-aligned on mobile — centre feels imbalanced with this
+              much copy. Remove if you prefer centred. */
+            text-align: left;
+          }
+
+          .hero-right-col {
+            width: 100%;
+            order: 2;
+            /* Centre the shirt and swatches */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* Remove relative positioning quirks from desktop */
+            position: static;
+          }
+
+          .hero-shirt-wrap {
+            display: flex;
+            justify-content: center;
+          }
+
+          .hero-shirt-wrap svg {
+            width: 260px !important;
+          }
+
+          /* Floating badges — hidden on mobile. Their absolute positioning is relative
+            to hero-right-col, which now has no fixed height in the stacked layout.
+            Re-enable and adjust values below if you want them on mobile. */
+          .hero-badge {
+            display: none;
+          }
+
+          /* Swatch strip — override any absolute/transform positioning from desktop
+            so it sits naturally below the shirt in flow */
+          .hero-swatch-strip {
+            position: static;
+            transform: none;
+            justify-content: center;
+            margin-top: 1.25rem;
+          }
+
+          /* CTAs — allow wrapping gracefully on narrow screens */
+          .hero-ctas {
+            flex-wrap: wrap;
+            gap: 0.75rem;
+          }
+
+          /* Stats — centre them */
+          .hero-stats {
+            justify-content: flex-start;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+          }
+        }
+
+/* ── Phone (≤480px) ──────────────────────────────────────────────────────────
+Further reductions for very small screens. The SVG is already 260px which
+fits a 375px phone with room to spare, but tighten other spacing. */
+        @media (max-width: 480px) {
+          .hero-inner {
+            padding: 5.5rem 1.25rem 2.5rem;
+            gap: 2rem;
+          }
+
+          .hero-shirt-wrap svg {
+            width: 220px !important;
+          }
+
+          .hero-swatch-strip {
+            gap: 6px;
+          }
+
+          .hero-stats {
+            gap: 1.25rem;
+          }
+
+          /* Keep the scroll indicator hidden on very small screens where it overlaps */
+          .scroll-indicator {
+            display: none;
+          }
+        }
+          
         .hero-left-col { display: flex; flex-direction: column; justify-content: center; padding: 3rem 3rem 3rem 4rem; }
         .hero-right-col { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
         .hero-eyebrow {
@@ -1566,7 +2004,7 @@ export default function DriplyLanding() {
           margin-bottom: 1.75rem;
         }
         .hero-line-wrap { display: block; }
-        .hero-line-mask { display: inline-block; overflow: hidden; vertical-align: bottom; }
+        .hero-line-mask { display: inline-block; overflow: hidden; vertical-align: bottom; white-space: nowrap;}
         .hero-char-outline {
           color: transparent !important;
           -webkit-text-stroke: 2.5px #C8F135;
@@ -1615,6 +2053,10 @@ export default function DriplyLanding() {
         .hero-shirt-wrap {
           animation: heroShirtFloat 6s ease-in-out infinite;
           transform-origin: center;
+        }
+
+        .hero-shirt-wrap svg {
+          transition: width 0.3s ease;
         }
         @keyframes heroShirtFloat {
           0%,100% { transform: translateY(0px) rotate(-1.5deg); }

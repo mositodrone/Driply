@@ -7,7 +7,8 @@
 // The clerkId, email, username, photo, firstName, lastName fields
 // are identical — the webhook handler uses them as-is.
 
-import { Schema, model, models } from 'mongoose'
+import mongoose from 'mongoose'
+const { Schema, model, models } = mongoose
 
 const UserSchema = new Schema(
   {

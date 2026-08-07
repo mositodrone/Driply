@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Layer, Line, Rect, Stage } from 'react-konva'
 
 import { CanvasToolbar } from './-dashboard/components/CanvasToolbar'
+import { ContextMenu, type ContextMenuGroups } from './-dashboard/components/ContextMenu'
 import { GarmentNode } from './-dashboard/components/GarmentNode'
 import { ImageNode } from './-dashboard/components/ImageNode'
 import { LeftPanel } from './-dashboard/components/LeftPanel'
@@ -68,13 +69,18 @@ function DashboardPage() {
     updateElement,
     deleteSelected,
     addText,
+    addShape,
     handleImageUpload,
     handleStageClick,
-    // ── Undo / redo — these need to be exposed from useCanvasDesign.
-    //    If they aren't yet, see the implementation note at the bottom
-    //    of this file.
     undo,
     redo,
+    canUndo,
+    canRedo,
+    moveUp,
+    moveDown,
+    moveToFront,
+    moveToBack,
+    toggleLock,
   } = useCanvasDesign()
 
   const [orderOpen,         setOrderOpen]         = useState(false)
@@ -86,6 +92,10 @@ function DashboardPage() {
 
   // Snap guide visibility — which centre lines are currently showing
   const [snapGuides, setSnapGuides] = useState<{ h: boolean; v: boolean }>({ h: false, v: false })
+
+  // Right-click canvas context menu — x/y are viewport (clientX/clientY)
+  // coords, so this must be rendered outside the zoomed canvasWrapRef.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; elementId: string } | null>(null)
 
   const stageRef      = useRef<any>(null)
   const fileInputRef  = useRef<HTMLInputElement>(null)
@@ -277,70 +287,53 @@ function DashboardPage() {
   }
 
   // ── Shapes ────────────────────────────────────────────────────────────────
-  function addShape(shapeType: ShapeType) {
+  // addShape itself now lives in useCanvasDesign (with proper undo history);
+  // this wrapper just keeps the toolsEnabled guard and toast.
+  function handleAddShape(shapeType: ShapeType) {
     if (!toolsEnabled) return
-    const el: DriplyEl = {
-      id:               uid(),
-      type:             'shape',
-      shapeType,
-      x:                DZ.x + DZ.w / 2 - 60,
-      y:                DZ.y + DZ.h / 2 - 60,
-      width:            120,
-      height:           120,
-      shapeFill:        '#C8F135',
-      shapeStroke:      'transparent',
-      shapeStrokeWidth: 0,
-      opacity:          1,
-      locked:           false,
-    }
-    setElements(prev => [...prev, el])
-    setSelectedId(el.id)
+    addShape(shapeType)
     showToast(`${shapeType} added`)
   }
 
-  // ── Layer reorder ─────────────────────────────────────────────────────────
-  function moveUp(id: string) {
-    setElements(els => {
-      const i = els.findIndex(e => e.id === id)
-      if (i < 0 || i >= els.length - 1) return els
-      const next = [...els];
-      [next[i], next[i + 1]] = [next[i + 1], next[i]]
-      return next
-    })
-  }
-
-  function moveDown(id: string) {
-    setElements(els => {
-      const i = els.findIndex(e => e.id === id)
-      if (i <= 0) return els
-      const next = [...els];
-      [next[i], next[i - 1]] = [next[i - 1], next[i]]
-      return next
-    })
-  }
-
-  function moveToFront(id: string) {
-    setElements(els => {
-      const el = els.find(e => e.id === id)
-      if (!el) return els
-      return [...els.filter(e => e.id !== id), el]
-    })
-  }
-
-  function moveToBack(id: string) {
-    setElements(els => {
-      const el = els.find(e => e.id === id)
-      if (!el) return els
-      return [el, ...els.filter(e => e.id !== id)]
-    })
-  }
-
   // ── Element lock toggle ───────────────────────────────────────────────────
-  function toggleLock(id: string) {
+  // Same deal — toggleLock now lives in useCanvasDesign; wrap for the toast.
+  function handleToggleLock(id: string) {
     const el = elements.find(e => e.id === id)
     if (!el) return
-    updateElement(id, { locked: !el.locked })
+    toggleLock(id)
     showToast(el.locked ? 'Layer unlocked' : 'Layer locked')
+  }
+
+  // ── Canvas context menu ───────────────────────────────────────────────────
+  function handleNodeContextMenu(el: DriplyEl, x: number, y: number) {
+    setSelectedId(el.id)
+    setCtxMenu({ x, y, elementId: el.id })
+  }
+
+  function buildContextMenuGroups(el: DriplyEl): ContextMenuGroups {
+    return [
+      [
+        { label: 'Bring to Front', icon: '⬆⬆', onClick: () => moveToFront(el.id) },
+        { label: 'Move Up',        icon: '↑',  onClick: () => moveUp(el.id) },
+        { label: 'Move Down',      icon: '↓',  onClick: () => moveDown(el.id) },
+        { label: 'Send to Back',   icon: '⬇⬇', onClick: () => moveToBack(el.id) },
+      ],
+      [
+        {
+          label:   el.locked ? 'Unlock layer' : 'Lock layer',
+          icon:    el.locked ? '🔓' : '🔒',
+          onClick: () => handleToggleLock(el.id),
+        },
+      ],
+      [
+        {
+          label:   'Delete',
+          icon:    '✕',
+          danger:  true,
+          onClick: () => { setSelectedId(el.id); deleteSelected() },
+        },
+      ],
+    ]
   }
 
   // Whether tools should be interactive (requires an active garment)
@@ -396,18 +389,20 @@ function DashboardPage() {
           setSelectedId={setSelectedId}
           onDeleteSelected={deleteSelected}
           onAddText={toolsEnabled ? addText : undefined}
-          onAddShape={toolsEnabled ? addShape : undefined}
+          onAddShape={toolsEnabled ? handleAddShape : undefined}
           fileInputRef={fileInputRef}
           onOpenSelector={() => setSelectorOpen(true)}
           activeGarment={activeGarment}
           toolsEnabled={toolsEnabled}
           onUndo={undo}
           onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
           onMoveUp={moveUp}
           onMoveDown={moveDown}
           onMoveToFront={moveToFront}
           onMoveToBack={moveToBack}
-          onToggleLock={toggleLock}
+          onToggleLock={handleToggleLock}
         />
 
         {/* ── Canvas area ─────────────────────────────────────────────────── */}
@@ -470,6 +465,13 @@ function DashboardPage() {
                     ref={stageRef}
                     width={STAGE_W} height={STAGE_H}
                     onClick={handleStageClick} onTap={handleStageClick}
+                    onContextMenu={e => {
+                      // Right-click on empty canvas (garment / background):
+                      // just suppress the native menu and dismiss ours, since
+                      // there's no element to act on.
+                      e.evt.preventDefault()
+                      setCtxMenu(null)
+                    }}
                     style={{
                       borderRadius: '16px', overflow: 'hidden',
                       background: '#2A2A2C', display: 'block',
@@ -532,9 +534,10 @@ function DashboardPage() {
                           onDragMove: (x: number, y: number, w: number, h: number) =>
                             handleElementDragMove(el, x, y, w, h),
                           onDragEnd:  handleElementDragEnd,
+                          onContextMenu: (x: number, y: number) => handleNodeContextMenu(el, x, y),
                         }
                         return el.type === 'text'
-                          ? <TextNode  key={el.id} {...props} />
+                          ? <TextNode  key={el.id} {...props} zoom={zoom}/>
                           : el.type === 'shape'
                           ? <ShapeNode key={el.id} {...props} />
                           : <ImageNode key={el.id} {...props} />
@@ -574,6 +577,32 @@ function DashboardPage() {
           onChange={attrs => selectedId && updateElement(selectedId, attrs)}
         />
       </div>
+
+      {/*
+        ── Canvas context menu ──────────────────────────────────────────────
+        Rendered here — a sibling of dash-body, NOT inside canvasWrapRef —
+        because canvasWrapRef has `transform: scale(zoom)` on it, and a CSS
+        transform on an ancestor creates a new containing block for
+        `position: fixed` descendants. Nested inside there, the menu would
+        track the scaled canvas instead of the actual viewport.
+
+        Keyed by element id + position so each right-click is a fresh mount:
+        this sidesteps a race where a stale close animation from switching
+        elements could null out the freshly-opened menu after the fact.
+      */}
+      {ctxMenu && (() => {
+        const el = elements.find(e => e.id === ctxMenu.elementId)
+        if (!el) return null
+        return (
+          <ContextMenu
+            key={`${ctxMenu.elementId}-${ctxMenu.x}-${ctxMenu.y}`}
+            x={ctxMenu.x}
+            y={ctxMenu.y}
+            groups={buildContextMenuGroups(el)}
+            onClose={() => setCtxMenu(null)}
+          />
+        )
+      })()}
 
       {/* ── Empty state styles ──────────────────────────────────────────────── */}
       <style>{`
@@ -663,43 +692,8 @@ function DashboardPage() {
   )
 }
 
+
 /*
-  ── useCanvasDesign: undo / redo implementation note ──────────────────────────
-
-  The hook needs to expose `undo` and `redo`. Here's the pattern to add inside
-  useCanvasDesign.ts, alongside the existing `elements` / `setElements` state:
-
-  ```ts
-  const historyRef  = useRef<DriplyEl[][]>([])
-  const futureRef   = useRef<DriplyEl[][]>([])
-
-  // Call this inside every mutation (addText, updateElement, deleteSelected,
-  // handleImageUpload) BEFORE applying the change:
-  function pushHistory(current: DriplyEl[]) {
-    historyRef.current = [...historyRef.current.slice(-49), current]
-    futureRef.current  = []   // clear redo stack on new action
-  }
-
-  function undo() {
-    if (historyRef.current.length === 0) return
-    const prev = historyRef.current.pop()!
-    futureRef.current = [elements, ...futureRef.current]
-    setElements(prev)
-  }
-
-  function redo() {
-    if (futureRef.current.length === 0) return
-    const next = futureRef.current.shift()!
-    historyRef.current = [...historyRef.current, elements]
-    setElements(next)
-  }
-
-  return { ..., undo, redo }
-  ```
-
-  Keep history capped at 50 snapshots (slice(-49) above) to avoid unbounded
-  memory growth on large designs.
-
   ── onDragMove / onDragEnd in TextNode and ImageNode ─────────────────────────
 
   Each node component needs two optional props:

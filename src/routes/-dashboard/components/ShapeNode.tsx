@@ -23,9 +23,10 @@ interface ShapeNodeProps {
   onChange:   (attrs: Partial<DriplyEl>) => void
   onDragMove?: (x: number, y: number, w: number, h: number) => void
   onDragEnd?:  () => void
+  onContextMenu?: (x: number, y: number) => void
 }
 
-export function ShapeNode({ el, isSelected, onSelect, onChange, onDragMove, onDragEnd }: ShapeNodeProps) {
+export function ShapeNode({ el, isSelected, onSelect, onChange, onDragMove, onDragEnd, onContextMenu }: ShapeNodeProps) {
   const shapeRef = useRef<any>(null)
   const trRef    = useRef<any>(null)
 
@@ -48,6 +49,12 @@ export function ShapeNode({ el, isSelected, onSelect, onChange, onDragMove, onDr
     draggable: !el.locked,
     onClick:   onSelect,
     onTap:     onSelect,
+    onContextMenu: (e: any) => {
+      e.evt.preventDefault()
+      e.cancelBubble = true // don't let Stage's onContextMenu dismiss this
+      onSelect()
+      onContextMenu?.(e.evt.clientX, e.evt.clientY)
+    },
     onDragMove: (e: any) => {
       const n = e.target
       onDragMove?.(n.x(), n.y(), n.width() * n.scaleX(), n.height() * n.scaleY())
