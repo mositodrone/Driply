@@ -12,7 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as MyDesignsRouteImport } from './routes/my-designs'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SignInSplatRouteImport } from './routes/sign-in/$'
+import { Route as ApiDesignsRouteImport } from './routes/api/designs'
+import { Route as ApiWebhooksPaystackRouteImport } from './routes/api/webhooks/paystack'
 import { Route as ApiWebhooksClerkRouteImport } from './routes/api/webhooks/clerk'
+import { Route as ApiPaymentsInitializeRouteImport } from './routes/api/payments/initialize'
+import { Route as ApiOrdersConfirmRouteImport } from './routes/api/orders/confirm'
 
 const MyDesignsRoute = MyDesignsRouteImport.update({
   id: '/my-designs',
@@ -29,9 +34,34 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignInSplatRoute = SignInSplatRouteImport.update({
+  id: '/sign-in/$',
+  path: '/sign-in/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDesignsRoute = ApiDesignsRouteImport.update({
+  id: '/api/designs',
+  path: '/api/designs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWebhooksPaystackRoute = ApiWebhooksPaystackRouteImport.update({
+  id: '/api/webhooks/paystack',
+  path: '/api/webhooks/paystack',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiWebhooksClerkRoute = ApiWebhooksClerkRouteImport.update({
   id: '/api/webhooks/clerk',
   path: '/api/webhooks/clerk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPaymentsInitializeRoute = ApiPaymentsInitializeRouteImport.update({
+  id: '/api/payments/initialize',
+  path: '/api/payments/initialize',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOrdersConfirmRoute = ApiOrdersConfirmRouteImport.update({
+  id: '/api/orders/confirm',
+  path: '/api/orders/confirm',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -39,34 +69,82 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/my-designs': typeof MyDesignsRoute
+  '/api/designs': typeof ApiDesignsRoute
+  '/sign-in/$': typeof SignInSplatRoute
+  '/api/orders/confirm': typeof ApiOrdersConfirmRoute
+  '/api/payments/initialize': typeof ApiPaymentsInitializeRoute
   '/api/webhooks/clerk': typeof ApiWebhooksClerkRoute
+  '/api/webhooks/paystack': typeof ApiWebhooksPaystackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/my-designs': typeof MyDesignsRoute
+  '/api/designs': typeof ApiDesignsRoute
+  '/sign-in/$': typeof SignInSplatRoute
+  '/api/orders/confirm': typeof ApiOrdersConfirmRoute
+  '/api/payments/initialize': typeof ApiPaymentsInitializeRoute
   '/api/webhooks/clerk': typeof ApiWebhooksClerkRoute
+  '/api/webhooks/paystack': typeof ApiWebhooksPaystackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/my-designs': typeof MyDesignsRoute
+  '/api/designs': typeof ApiDesignsRoute
+  '/sign-in/$': typeof SignInSplatRoute
+  '/api/orders/confirm': typeof ApiOrdersConfirmRoute
+  '/api/payments/initialize': typeof ApiPaymentsInitializeRoute
   '/api/webhooks/clerk': typeof ApiWebhooksClerkRoute
+  '/api/webhooks/paystack': typeof ApiWebhooksPaystackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/my-designs' | '/api/webhooks/clerk'
+  fullPaths:
+    | '/'
+    | '/dashboard'
+    | '/my-designs'
+    | '/api/designs'
+    | '/sign-in/$'
+    | '/api/orders/confirm'
+    | '/api/payments/initialize'
+    | '/api/webhooks/clerk'
+    | '/api/webhooks/paystack'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/my-designs' | '/api/webhooks/clerk'
-  id: '__root__' | '/' | '/dashboard' | '/my-designs' | '/api/webhooks/clerk'
+  to:
+    | '/'
+    | '/dashboard'
+    | '/my-designs'
+    | '/api/designs'
+    | '/sign-in/$'
+    | '/api/orders/confirm'
+    | '/api/payments/initialize'
+    | '/api/webhooks/clerk'
+    | '/api/webhooks/paystack'
+  id:
+    | '__root__'
+    | '/'
+    | '/dashboard'
+    | '/my-designs'
+    | '/api/designs'
+    | '/sign-in/$'
+    | '/api/orders/confirm'
+    | '/api/payments/initialize'
+    | '/api/webhooks/clerk'
+    | '/api/webhooks/paystack'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
   MyDesignsRoute: typeof MyDesignsRoute
+  ApiDesignsRoute: typeof ApiDesignsRoute
+  SignInSplatRoute: typeof SignInSplatRoute
+  ApiOrdersConfirmRoute: typeof ApiOrdersConfirmRoute
+  ApiPaymentsInitializeRoute: typeof ApiPaymentsInitializeRoute
   ApiWebhooksClerkRoute: typeof ApiWebhooksClerkRoute
+  ApiWebhooksPaystackRoute: typeof ApiWebhooksPaystackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -92,11 +170,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sign-in/$': {
+      id: '/sign-in/$'
+      path: '/sign-in/$'
+      fullPath: '/sign-in/$'
+      preLoaderRoute: typeof SignInSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/designs': {
+      id: '/api/designs'
+      path: '/api/designs'
+      fullPath: '/api/designs'
+      preLoaderRoute: typeof ApiDesignsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/webhooks/paystack': {
+      id: '/api/webhooks/paystack'
+      path: '/api/webhooks/paystack'
+      fullPath: '/api/webhooks/paystack'
+      preLoaderRoute: typeof ApiWebhooksPaystackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/webhooks/clerk': {
       id: '/api/webhooks/clerk'
       path: '/api/webhooks/clerk'
       fullPath: '/api/webhooks/clerk'
       preLoaderRoute: typeof ApiWebhooksClerkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/payments/initialize': {
+      id: '/api/payments/initialize'
+      path: '/api/payments/initialize'
+      fullPath: '/api/payments/initialize'
+      preLoaderRoute: typeof ApiPaymentsInitializeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/orders/confirm': {
+      id: '/api/orders/confirm'
+      path: '/api/orders/confirm'
+      fullPath: '/api/orders/confirm'
+      preLoaderRoute: typeof ApiOrdersConfirmRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -106,17 +219,23 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
   MyDesignsRoute: MyDesignsRoute,
+  ApiDesignsRoute: ApiDesignsRoute,
+  SignInSplatRoute: SignInSplatRoute,
+  ApiOrdersConfirmRoute: ApiOrdersConfirmRoute,
+  ApiPaymentsInitializeRoute: ApiPaymentsInitializeRoute,
   ApiWebhooksClerkRoute: ApiWebhooksClerkRoute,
+  ApiWebhooksPaystackRoute: ApiWebhooksPaystackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
+import type { startInstance } from './start.ts'
 declare module '@tanstack/react-start' {
   interface Register {
     ssr: true
     router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
   }
 }

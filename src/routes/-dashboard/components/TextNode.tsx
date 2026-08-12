@@ -12,10 +12,9 @@ interface TextNodeProps {
    *  Needed so the overlay textarea tracks the canvas pixel-perfectly.
    *  Defaults to 1 (no zoom). */
   zoom?: number
-  onContextMenu?: (x: number, y: number) => void
 }
 
-export function TextNode({ el, isSelected, onSelect, onChange, zoom = 1, onContextMenu }: TextNodeProps) {
+export function TextNode({ el, isSelected, onSelect, onChange, zoom = 1 }: TextNodeProps) {
   const nodeRef = useRef<any>(null)
   const trRef   = useRef<any>(null)
   const taRef   = useRef<HTMLTextAreaElement>(null)
@@ -167,18 +166,16 @@ export function TextNode({ el, isSelected, onSelect, onChange, zoom = 1, onConte
         strokeWidth={el.strokeColor ? (el.strokeWidth ?? 0) : 0}
         opacity={el.opacity ?? 1}
         rotation={el.rotation ?? 0}
+        // Flip: mirror around element centre using offset + negative scale
+        scaleX={(el.flipH ? -1 : 1)}
+        scaleY={(el.flipV ? -1 : 1)}
+        offsetX={el.flipH ? ((el.fontSize ?? 22) * ((el.text ?? '').length * 0.6)) / 2 : 0}
         // Hide the Konva text while the textarea overlay is active so there's
         // no double-rendering — the textarea IS the editing surface.
         visible={!isEditing}
         draggable={!el.locked && !isEditing}
         onClick={onSelect}
         onTap={onSelect}
-        onContextMenu={e => {
-          e.evt.preventDefault()
-          e.cancelBubble = true // don't let Stage's onContextMenu dismiss this
-          onSelect()
-          onContextMenu?.(e.evt.clientX, e.evt.clientY)
-        }}
         onDblClick={e => startEditing(e)}
         onDblTap={e  => startEditing(e)}
         onDragEnd={e => onChange({ x: e.target.x(), y: e.target.y() })}

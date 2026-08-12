@@ -8,6 +8,7 @@ import { connectToDatabase } from '../database/mongoose'
 import Order from '../database/order.model'
 import { markDraftOrdered } from './design.actions'
 import { incrementOrderStats } from './user.actions'
+import { verifyTransaction } from '../paystack'
 
 export interface CreateOrderParams {
   clerkId:        string
@@ -66,6 +67,80 @@ export async function createOrder(params: CreateOrderParams) {
     return JSON.parse(JSON.stringify(newOrder))
   } catch (error) {
     console.error('[createOrder]', error)
+    throw error
+  }
+}
+
+// ── CONFIRM ORDER FROM A PAYSTACK REFERENCE ───────────────────────────────────
+// The one place that turns "a reference someone gave us" into a verified,
+// saved Order. Called from two places:
+//   1. app/routes/api/orders/confirm.ts — right after the client's Paystack
+//      popup succeeds, for fast feedback. Passes `trustedClerkId` from the
+//      authenticated session.
+//   2. app/routes/api/webhooks/paystack.ts — Paystack's own charge.success
+//      event, the reliable fallback if the client never gets to call #1
+//      (closed tab, network drop, etc). No session available, so it trusts
+//      clerkId from the transaction metadata instead.
+//
+// Whichever of the two runs first wins — createOrder()'s paystackRef
+// uniqueness check makes the second call a harmless no-op.
+export async function confirmPaystackOrder(
+  reference: string,
+  opts?: { trustedClerkId?: string }
+) {
+  try {
+    await connectToDatabase()
+
+    // Fast idempotency path — skip the Paystack API round-trip entirely
+    // if this reference was already recorded (by the other caller).
+    const existing = await Order.findOne({ paystackRef: reference })
+    if (existing) return JSON.parse(JSON.stringify(existing))
+
+    // Server-to-server verify — the only source of truth for whether this
+    // transaction actually succeeded and for how much.
+    const txn = await verifyTransaction(reference)
+
+    if (txn.status !== 'success') {
+      throw new Error(`Paystack transaction not successful: ${txn.status}`)
+    }
+
+    const meta = txn.metadata as Partial<CreateOrderParams> | null
+    const clerkId = opts?.trustedClerkId ?? meta?.clerkId
+    if (!clerkId) throw new Error('Missing clerkId — cannot attribute this order to a user')
+    if (!meta?.designId) throw new Error('Transaction metadata missing designId')
+
+    // TODO: once you have a server-side pricing table, recompute the
+    // expected total from meta.quantities/sizeColorSplit + delivery cost
+    // and compare it to txn.amount here, rejecting on mismatch. Right now
+    // this trusts whatever amount Paystack actually charged, which is
+    // safe against payment fraud (Paystack itself enforces that) but not
+    // against someone tampering with the *quantities* metadata to claim
+    // more pieces than were actually paid for.
+    const order = await createOrder({
+      clerkId,
+      designId:       meta.designId,
+      paystackRef:    reference,
+      amount:         txn.amount, // kobo, from Paystack's verified response — never the client's number
+      garment:        meta.garment        ?? { id: '', name: '', color: { label: '', hex: '' }, size: '' },
+      quantities:     meta.quantities     ?? {},
+      sizeColorSplit: meta.sizeColorSplit ?? {},
+      totalPieces:    meta.totalPieces    ?? 0,
+      customer:       meta.customer       ?? ({} as CreateOrderParams['customer']),
+      notes:          meta.notes,
+    })
+
+    // Attach the masked card receipt (never the PAN/CVV) for the confirm
+    // route to hand back to the client — StepConfirmed's card preview reads this.
+    return {
+      ...order,
+      authorization: txn.authorization ? {
+        last4: txn.authorization.last4,
+        brand: txn.authorization.brand ?? txn.authorization.card_type,
+        bank:  txn.authorization.bank,
+      } : undefined,
+    }
+  } catch (error) {
+    console.error('[confirmPaystackOrder]', error)
     throw error
   }
 }

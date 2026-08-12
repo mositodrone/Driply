@@ -43,8 +43,10 @@ export function useCanvasDesign(initialView: View = 'front') {
   )
 
   // ── Undo / redo ──────────────────────────────────────────────────────────────
-  const historyRef = useRef<DriplyEl[][]>([])
-  const futureRef  = useRef<DriplyEl[][]>([])
+  const historyRef  = useRef<DriplyEl[][]>([])
+  const futureRef   = useRef<DriplyEl[][]>([])
+  // Clipboard — survives across selections but not page reloads (intentional)
+  const clipboardRef = useRef<DriplyEl | null>(null)
 
   // Expose reactive flags so LeftPanel can enable/disable buttons correctly.
   // We use a counter rather than re-reading .length on refs (refs don't trigger
@@ -227,6 +229,59 @@ export function useCanvasDesign(initialView: View = 'front') {
     if (e.target === e.target.getStage()) setSelectedId(null)
   }, [])
 
+  // ── Copy ────────────────────────────────────────────────────────────────────
+  const copyElement = useCallback((id: string) => {
+    const el = elementsRef.current.find(e => e.id === id)
+    if (el) clipboardRef.current = el
+  }, [])
+
+  // ── Paste ────────────────────────────────────────────────────────────────────
+  const pasteElement = useCallback(() => {
+    const src = clipboardRef.current
+    if (!src) return
+    pushHistory()
+    const id = uid()
+    const copy: DriplyEl = { ...src, id, x: src.x + 18, y: src.y + 18 }
+    setElements(els => [...els, copy])
+    setSelectedId(id)
+    animateLayerIn(id)
+  }, [setElements])
+
+  // ── Flip horizontal / vertical ───────────────────────────────────────────────
+  // Stored as booleans on the element; node components apply them as
+  // scaleX / scaleY offsets around the element centre via Konva offsetX/offsetY.
+  const flipH = useCallback((id: string) => {
+    pushHistory()
+    setElements(els => els.map(el =>
+      el.id === id ? { ...el, flipH: !el.flipH } : el
+    ))
+  }, [setElements])
+
+  const flipV = useCallback((id: string) => {
+    pushHistory()
+    setElements(els => els.map(el =>
+      el.id === id ? { ...el, flipV: !el.flipV } : el
+    ))
+  }, [setElements])
+
+  // ── Opacity quick-set ────────────────────────────────────────────────────────
+  const setOpacity = useCallback((id: string, opacity: number) => {
+    updateElement(id, { opacity })
+  }, [updateElement])
+
+  // ── Select all / deselect all ────────────────────────────────────────────────
+  const selectAll = useCallback(() => {
+    // Konva doesn't support multi-selection natively in our setup,
+    // so selectAll selects the topmost element (last in array = highest layer)
+    // and is most useful as a "jump to top element" / future multi-select hook.
+    const top = elementsRef.current[elementsRef.current.length - 1]
+    if (top) setSelectedId(top.id)
+  }, [])
+
+  const deselectAll = useCallback(() => {
+    setSelectedId(null)
+  }, [])
+
   return {
     view, setView,
     tool, setTool,
@@ -250,5 +305,12 @@ export function useCanvasDesign(initialView: View = 'front') {
     moveToFront,
     moveToBack,
     toggleLock,
+    copyElement,
+    pasteElement,
+    flipH,
+    flipV,
+    setOpacity,
+    selectAll,
+    deselectAll,
   }
 }

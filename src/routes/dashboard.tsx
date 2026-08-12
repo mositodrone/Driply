@@ -11,11 +11,13 @@
 // ============================================================
 
 import { useGSAP } from '@gsap/react'
-import { createFileRoute, useBlocker } from '@tanstack/react-router'
+import { createFileRoute, redirect, useBlocker } from '@tanstack/react-router'
 import gsap from 'gsap'
 import Flip from 'gsap/Flip'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Layer, Line, Rect, Stage } from 'react-konva'
+import { auth } from '@clerk/tanstack-react-start/server'
+import { useUser } from '@clerk/tanstack-react-start'
 
 import { CanvasToolbar } from './-dashboard/components/CanvasToolbar'
 import { ContextMenu, type ContextMenuGroups } from './-dashboard/components/ContextMenu'
@@ -36,12 +38,24 @@ import type { DesignDraft } from './-dashboard/models/design'
 
 import { GarmentSelector, type GarmentSelection } from './components/GarmentSelector'
 import { OrderFlowOverlay } from './components/OrderFlowOverlay'
+import { createServerFn } from '@tanstack/react-start'
+import { ExportPreviewModal } from './-dashboard/components/ExportPreviewModal'
 import { getColorFilter } from './data/garments'
 
 gsap.registerPlugin(useGSAP, Flip)
 
+//  protects the rendered page; this is what stops a direct call to the
+//  endpoint from an unauthenticated request. ──────────────────────────────
+
 export const Route = createFileRoute('/dashboard')({
   component: DashboardPage,
+  beforeLoad: async ({ location }) => {
+    const { isAuthenticated } = await auth()
+    if (!isAuthenticated) {
+      throw redirect({ to: '/sign-in', search: { redirect: location.href } })
+    }
+  },
+  loader: async () => { /* TODO: place in my loader */ },
 })
 
 // ── Snap guide threshold (px on canvas) ──────────────────────────────────────
@@ -50,6 +64,13 @@ const STAGE_CX = STAGE_W / 2
 const STAGE_CY = STAGE_H / 2
 
 function DashboardPage() {
+  // Client-side — used only to populate Paystack metadata (OrderFlowOverlay)
+  // and the /api/designs POST body. The actual security boundary is server
+  // side: /api/designs and /api/orders/confirm both re-derive the real
+  // clerkId from the session via auth() and never trust this value alone.
+  const { user } = useUser()
+  const clerkId = user?.id ?? ''
+
   // ── Design ID ─────────────────────────────────────────────────────────────
   const [designId] = useState<string>(() => {
     const existing = sessionStorage.getItem('driply_active_design')
@@ -81,14 +102,31 @@ function DashboardPage() {
     moveToFront,
     moveToBack,
     toggleLock,
+    copyElement,
+    pasteElement,
+    flipH,
+    flipV,
+    setOpacity,
+    selectAll,
+    deselectAll,
   } = useCanvasDesign()
 
   const [orderOpen,         setOrderOpen]         = useState(false)
+  const [previewOpen,       setPreviewOpen]        = useState(false)
   const [selectorOpen,      setSelectorOpen]       = useState(false)
   const [activeGarment,     setActiveGarment]      = useState<GarmentSelection | null>(null)
   const [hasUnsaved,        setHasUnsaved]         = useState(false)
   const [savedAt,           setSavedAt]            = useState<Date | null>(null)
   const [designPreviewUrl,  setDesignPreviewUrl]   = useState<string | undefined>(undefined)
+  const [stageBg,           setStageBg]            = useState('#2A2A2C')
+  const [contextMenu,       setContextMenu]        = useState<{ x: number; y: number } | null>(null)
+  const [projectName,       setProjectName]        = useState<string>(() => {
+    try { return localStorage.getItem('driply_project_name') ?? 'My First Design' } catch { return 'My First Design' }
+  })
+
+  // Both TopBar buttons lock until garment active + ≥1 element on canvas
+  const canAct = !!activeGarment && elements.length > 0
+
 
   // Snap guide visibility — which centre lines are currently showing
   const [snapGuides, setSnapGuides] = useState<{ h: boolean; v: boolean }>({ h: false, v: false })
@@ -102,6 +140,7 @@ function DashboardPage() {
   const canvasWrapRef = useRef<HTMLDivElement>(null)
   const rootRef       = useRef<HTMLDivElement>(null)
   const saveTimer     = useRef<ReturnType<typeof setTimeout>>()
+  const serverSyncTimer = useRef<ReturnType<typeof setTimeout>>()
   const emptyStateRef = useRef<HTMLDivElement>(null)
 
   const { showToast, Toast } = useToast()
@@ -140,6 +179,56 @@ function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elements, view])
 
+  // ── Server sync ────────────────────────────────────────────────────────────
+  //  Pushes the current draft to Mongo via saveDraft() (design.actions.ts).
+  //  Kept deliberately separate from the 1.2s local save above — that one's
+  //  instant/cheap (localStorage) and fine to fire on every change; this one
+  //  hits the DB and would hammer it if it ran that often. Fired two ways:
+  //    1. After 30s of inactivity (effect below)
+  //    2. Immediately before opening the export or order-quote flows — a
+  //       Design document has to actually exist before checkout, or
+  //       confirmPaystackOrder's markDraftOrdered(designId) silently no-ops
+  //       on a designId nothing ever saved, and the order shows up on
+  //       /my-designs as an orphan with no preview image.
+  const syncDraftToServer = useCallback(async () => {
+    if (elements.length === 0 || !activeGarment) return
+    try {
+      await fetch('/api/designs', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          designId,
+          garment: {
+            id:    activeGarment.garment.id,
+            name:  activeGarment.garment.name,
+            color: {
+              label:  activeGarment.color.label,
+              hex:    activeGarment.color.hex,
+              filter: activeGarment.color.filter,
+            },
+            size: activeGarment.size,
+          },
+          elements,
+          view,
+          previewUrl: designPreviewUrl,
+        }),
+      })
+    } catch {
+      // Non-fatal — the 30s timer will retry on the next change, and the
+      // local save already protects against data loss in the meantime.
+      // (If this keeps failing silently, worth adding a toast here.)
+    }
+  }, [designId, activeGarment, elements, view, designPreviewUrl])
+
+  // ── Server sync (debounced 30s of inactivity) ─────────────────────────────
+  useEffect(() => {
+    if (elements.length === 0) return
+    clearTimeout(serverSyncTimer.current)
+    serverSyncTimer.current = setTimeout(() => { syncDraftToServer() }, 3000)
+    return () => clearTimeout(serverSyncTimer.current)
+  }, [elements, view, syncDraftToServer])
+
+
   // ── Route-leave guard ─────────────────────────────────────────────────────
   useBlocker(
     useCallback(({ proceed, reset }) => {
@@ -148,6 +237,7 @@ function DashboardPage() {
       if (ok) {
         const draft: DesignDraft = { elements, view, savedAt: new Date().toISOString() }
         localStorage.setItem(draftKey, JSON.stringify(draft))
+	syncDraftToServer()
       }
       ok ? proceed() : reset()
     }, [hasUnsaved, elements, view, draftKey]),
@@ -165,6 +255,35 @@ function DashboardPage() {
     })
   }
 
+  function handleRename(name: string) {
+    setProjectName(name)
+    try { localStorage.setItem('driply_project_name', name) } catch { /* quota */ }
+    const draft = JSON.parse(sessionStorage.getItem('driply-draft') ?? '{}')
+    sessionStorage.setItem('driply-draft', JSON.stringify({ ...draft, projectName: name }))
+  }
+
+  // Duplicate the selected element (offset by +16px so it's visibly separate)
+  // Calls through setElements from useCanvasDesign — pushHistory should be added
+  // to useCanvasDesign if not already there. For a quick inline version:
+  const duplicateSelected = useCallback(() => {
+    if (!selectedId) return
+    const el = elements.find(e => e.id === selectedId)
+    if (!el) return
+    // Import uid from canvas-element if not already in scope
+    const newId = uid()
+    const copy: DriplyEl = { ...el, id: newId, x: el.x + 16, y: el.y + 16 }
+    setElements(els => [...els, copy])
+    setSelectedId(newId)
+  }, [selectedId, elements, setElements, setSelectedId])
+
+  // Clear all elements from the canvas
+  const clearCanvas = useCallback(() => {
+    if (elements.length === 0) return
+    if (!window.confirm('Clear all elements from the canvas? This cannot be undone.')) return
+    setElements([])
+    setSelectedId(null)
+  }, [elements, setElements, setSelectedId])
+
   // ── Back button ───────────────────────────────────────────────────────────
   function handleBack(e: React.MouseEvent) {
     if (orderOpen) { e.preventDefault(); return }
@@ -178,6 +297,57 @@ function DashboardPage() {
       }
     }
   }
+
+  function handleContextMenu(e: any) {
+  e.evt.preventDefault()
+  // Use clientX/Y for fixed positioning — works regardless of scroll or zoom
+  setContextMenu({ x: e.evt.clientX, y: e.evt.clientY })
+}
+
+// Build the item groups based on what's currently selected.
+// Called inline in the render — rebuilds cheaply on each render.
+  function buildContextGroups(): ContextMenuGroups {
+    // ── Nothing selected — empty canvas right-click ───────────────────────────
+    return [
+      [
+        {
+          label: 'Select All',   icon: '⊡', shortcut: 'Ctrl+A',
+          onClick: selectAll,
+          disabled: elements.length === 0,
+        },
+        {
+          label: 'Deselect All', icon: '⊠', shortcut: 'Esc',
+          onClick: deselectAll,
+          disabled: !selectedId,
+        },
+      ],
+      [
+        {
+          label: 'Zoom In',    icon: '+', shortcut: 'Ctrl++',
+          onClick: () => setZoom(z => Math.min(1.8, parseFloat((z + 0.1).toFixed(1)))),
+        },
+        {
+          label: 'Reset Zoom', icon: '↺', shortcut: 'Ctrl+0',
+          onClick: () => setZoom(1),
+        },
+        {
+          label: 'Zoom Out',   icon: '−', shortcut: 'Ctrl+−',
+          onClick: () => setZoom(z => Math.max(0.5, parseFloat((z - 0.1).toFixed(1)))),
+          disabled: zoom <= 0.5,
+        },
+      ],
+      [
+        {
+          label: 'Clear Canvas', icon: '🗑',
+          onClick: clearCanvas,
+          danger: true,
+          disabled: elements.length === 0,
+        },
+      ],
+    ]
+  }
+
+
 
   // ── Panel mount animation ─────────────────────────────────────────────────
   useGSAP(() => {
@@ -225,6 +395,29 @@ function DashboardPage() {
         e.preventDefault()
         redo?.()
       }
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        e.preventDefault()
+        duplicateSelected()
+      }
+
+      // Copy: Ctrl+C / Cmd+C
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedId && !typing) {
+        e.preventDefault()
+        copyElement(selectedId)
+      }
+
+      // Paste: Ctrl+V / Cmd+V
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !typing) {
+        e.preventDefault()
+        pasteElement()
+      }
+
+      // Select all: Ctrl+A / Cmd+A
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !typing) {
+        e.preventDefault()
+        selectAll()
+      }
     }
     window.addEventListener('keydown', fn)
     return () => window.removeEventListener('keydown', fn)
@@ -246,7 +439,7 @@ function DashboardPage() {
   }, [view, setView])
 
   // ── Order flow ────────────────────────────────────────────────────────────
-  function openOrderFlow() {
+  async function openOrderFlow() {
     const draft: DesignDraft = { elements, view, savedAt: new Date().toISOString() }
     localStorage.setItem(draftKey, JSON.stringify(draft))
     setHasUnsaved(false)
@@ -254,13 +447,44 @@ function DashboardPage() {
 
     // Export the full canvas (garment + all design elements) as a flat PNG
     // so the order preview shows the actual design, not just the plain garment.
+    let previewUrl = designPreviewUrl
     if (stageRef.current) {
       try {
-        const url = stageRef.current.toDataURL({ pixelRatio: 1.5 })
-        setDesignPreviewUrl(url)
+        previewUrl = stageRef.current.toDataURL({ pixelRatio: 1.5 })
+        setDesignPreviewUrl(previewUrl)
       } catch {
-        setDesignPreviewUrl(undefined)
+        previewUrl = undefined
       }
+    }
+
+    // Awaited (unlike the export-preview checkpoint below) — this is the
+    // moment right before checkout, worth the round trip to make sure a
+    // Design document actually exists before Paystack metadata references
+    // this designId.
+    try {
+      await fetch('/api/designs', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          designId,
+          garment: activeGarment ? {
+            id:    activeGarment.garment.id,
+            name:  activeGarment.garment.name,
+            color: {
+              label:  activeGarment.color.label,
+              hex:    activeGarment.color.hex,
+              filter: activeGarment.color.filter,
+            },
+            size: activeGarment.size,
+          } : undefined,
+          elements,
+          view,
+          previewUrl,
+        }),
+      })
+    } catch {
+      // Proceed anyway — the order can still be created, it just won't
+      // have a matching Design doc until the next successful sync.
     }
 
     setOrderOpen(true)
@@ -312,24 +536,49 @@ function DashboardPage() {
 
   function buildContextMenuGroups(el: DriplyEl): ContextMenuGroups {
     return [
+      // ── Copy / Paste / Duplicate ─────────────────────────────────────────
+      [
+        {
+          label: 'Copy',      icon: '⧉', shortcut: 'Ctrl+C',
+          onClick: () => copyElement(el.id),
+        },
+        {
+          label: 'Paste',     icon: '📋', shortcut: 'Ctrl+V',
+          onClick: pasteElement,
+        },
+        {
+          label: 'Duplicate', icon: '◈', shortcut: 'Ctrl+D',
+          onClick: duplicateSelected,
+        },
+      ],
+      // ── Flip ─────────────────────────────────────────────────────────────
+      [
+        { label: 'Flip Horizontal', icon: '↔', onClick: () => flipH(el.id) },
+        { label: 'Flip Vertical',   icon: '↕', onClick: () => flipV(el.id) },
+      ],
+      // ── Opacity quick-set ────────────────────────────────────────────────
+      [
+        { label: 'Opacity 25%',  icon: '○', onClick: () => setOpacity(el.id, 0.25) },
+        { label: 'Opacity 50%',  icon: '◑', onClick: () => setOpacity(el.id, 0.5)  },
+        { label: 'Opacity 75%',  icon: '◕', onClick: () => setOpacity(el.id, 0.75) },
+        { label: 'Opacity 100%', icon: '●', onClick: () => setOpacity(el.id, 1)    },
+      ],
+      // ── Layer order ──────────────────────────────────────────────────────
       [
         { label: 'Bring to Front', icon: '⬆⬆', onClick: () => moveToFront(el.id) },
-        { label: 'Move Up',        icon: '↑',  onClick: () => moveUp(el.id) },
-        { label: 'Move Down',      icon: '↓',  onClick: () => moveDown(el.id) },
-        { label: 'Send to Back',   icon: '⬇⬇', onClick: () => moveToBack(el.id) },
+        { label: 'Move Up',        icon: '↑',   onClick: () => moveUp(el.id)      },
+        { label: 'Move Down',      icon: '↓',   onClick: () => moveDown(el.id)    },
+        { label: 'Send to Back',   icon: '⬇⬇', onClick: () => moveToBack(el.id)  },
       ],
+      // ── Lock / Delete ────────────────────────────────────────────────────
       [
         {
           label:   el.locked ? 'Unlock layer' : 'Lock layer',
           icon:    el.locked ? '🔓' : '🔒',
           onClick: () => handleToggleLock(el.id),
         },
-      ],
-      [
         {
-          label:   'Delete',
-          icon:    '✕',
-          danger:  true,
+          label: 'Delete', icon: '✕', shortcut: 'Del', danger: true,
           onClick: () => { setSelectedId(el.id); deleteSelected() },
         },
       ],
@@ -360,17 +609,39 @@ function DashboardPage() {
         open={orderOpen}
         onClose={() => setOrderOpen(false)}
         designId={designId}
+        clerkId={clerkId}
         activeGarment={activeGarment}
         designPreviewUrl={designPreviewUrl}
       />
 
+      <ExportPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        stageRef={stageRef}
+        activeGarment={activeGarment}
+        elements={elements}
+        projectName={projectName}
+      />
+
       <TopBar
-        projectName="My First Collection"
+        projectName={projectName}
+        onRename={handleRename}
+        onOpenPreview={() => { syncDraftToServer(); setPreviewOpen(true) }}
         onOpenFlow={openOrderFlow}
         hasUnsaved={hasUnsaved}
         savedAt={savedAt}
         onBack={handleBack}
+        canAct={canAct}
       />
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          groups={buildContextGroups()}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
 
       <div className="dash-body">
 
@@ -403,6 +674,8 @@ function DashboardPage() {
           onMoveToFront={moveToFront}
           onMoveToBack={moveToBack}
           onToggleLock={handleToggleLock}
+          stageBg={stageBg}
+          onStageBgChange={setStageBg}
         />
 
         {/* ── Canvas area ─────────────────────────────────────────────────── */}
@@ -465,13 +738,7 @@ function DashboardPage() {
                     ref={stageRef}
                     width={STAGE_W} height={STAGE_H}
                     onClick={handleStageClick} onTap={handleStageClick}
-                    onContextMenu={e => {
-                      // Right-click on empty canvas (garment / background):
-                      // just suppress the native menu and dismiss ours, since
-                      // there's no element to act on.
-                      e.evt.preventDefault()
-                      setCtxMenu(null)
-                    }}
+                    onContextMenu={handleContextMenu}
                     style={{
                       borderRadius: '16px', overflow: 'hidden',
                       background: '#2A2A2C', display: 'block',

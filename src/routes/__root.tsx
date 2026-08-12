@@ -82,6 +82,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
+	{/* Change v1 to v2 */}
+	<script src="https://js.paystack.co/v2/inline.js"></script>
         <ClerkProvider>
           {children}
           <TanStackDevtools

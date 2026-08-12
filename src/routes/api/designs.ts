@@ -1,96 +1,115 @@
-// ============================================================
-//  app/routes/api/designs.ts
-//  TanStack Start server functions for the designs collection.
+// routes/api/designs.ts
 //
-//  Endpoints:
-//    GET    /api/designs          — list user's designs
-//    POST   /api/designs          — save / upsert a design
-//    DELETE /api/designs/:id      — delete a design
+// Server-authoritative persistence for canvas drafts. This replaces the
+// old native-MongoDB-driver version of this file, which used a different
+// Clerk package (getAuth from @clerk/tanstack-start/server — the deprecated
+// pre-rename package) and a different collection entirely from the Mongoose
+// Design model everything else (design.actions.ts, /my-designs,
+// confirmPaystackOrder's markDraftOrdered) actually reads from. That old
+// version should be deleted, not kept alongside this one.
 //
-//  Auth: Clerk userId pulled from server-side auth() helper.
-// ============================================================
+// clerkId is always derived from the authenticated session server-side via
+// auth() — the client never gets to say who it's saving as. This is what
+// dashboard.tsx's syncDraftToServer()/openOrderFlow() call.
+//
+// Endpoints:
+//   GET    /api/designs   — list current user's drafts (used by future
+//                            client-side needs; /my-designs currently reads
+//                            server-side via getMyDesignsFeed instead)
+//   POST   /api/designs   — upsert the current draft (dashboard autosave)
+//   DELETE /api/designs   — delete a draft, body: { designId }
+//                            (wire up /my-designs' handleDelete TODO to this)
 
-import { getAuth } from "@clerk/tanstack-start/server";
-import { createAPIRoute } from "@tanstack/start";
-import { ObjectId } from "mongodb";
-import { designs } from "~/lib/mongodb";
+import { createFileRoute } from '@tanstack/react-router'
+import { auth } from '@clerk/tanstack-react-start/server'
+import { saveDraft, getDraftsByUser, deleteDraft } from '@/lib/actions/design.actions'
+import { getMyDesignsFeed } from '@/lib/actions/mydesigns.actions'
 
-// ─── GET — list designs for current user ─────────────────────────────────────
-export const GET = createAPIRoute(async ({ request }) => {
-	const { userId } = await getAuth(request);
-	if (!userId) return new Response("Unauthorized", { status: 401 });
+export const Route = createFileRoute('/api/designs')({
+  server: {
+    handlers: {
+      GET: async () => {
+        const { isAuthenticated, userId } = await auth()
+        if (!isAuthenticated || !userId) {
+          return Response.json({ error: 'Not authenticated' }, { status: 401 })
+        }
+        try {
+          const drafts = await getDraftsByUser(userId)
+          return Response.json({ drafts })
+        } catch (error: any) {
+          console.error('[api/designs GET]', error)
+          return Response.json({ error: error?.message ?? 'Failed to load drafts' }, { status: 500 })
+        }
+      },
 
-	const col = await designs();
-	const docs = await col
-		.find({ userId }, { projection: { elements: 0 } }) // omit heavy elements in list view
-		.sort({ updatedAt: -1 })
-		.limit(50)
-		.toArray();
+      POST: async ({ request }) => {
+        const { isAuthenticated, userId } = await auth()
+        if (!isAuthenticated || !userId) {
+          return Response.json({ error: 'Not authenticated' }, { status: 401 })
+        }
 
-	return Response.json(docs);
-});
+        let body: any
+        try {
+          body = await request.json()
+        } catch {
+          return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+        }
 
-// ─── POST — create or update a design ────────────────────────────────────────
-export const POST = createAPIRoute(async ({ request }) => {
-	const { userId } = await getAuth(request);
-	if (!userId) return new Response("Unauthorized", { status: 401 });
+        const { designId, garment, elements, view, previewUrl } = body
+        if (!designId || !elements) {
+          return Response.json({ error: 'designId and elements are required' }, { status: 400 })
+        }
 
-	const body = await request.json();
-	const {
-		designId, // client-generated uid — used as idempotency key
-		name,
-		garmentId,
-		garmentColor,
-		garmentSize,
-		garmentAttrs,
-		zoneId,
-		elements,
-		thumbnail, // base64 PNG from stage.toDataURL()
-		view,
-	} = body;
+        try {
+          const draft = await saveDraft({
+            clerkId: userId, // session-derived — ignores anything the body might claim
+            designId,
+            garment,
+            elements,
+            view,
+            previewUrl,
+          })
+          return Response.json({ draft })
+        } catch (error: any) {
+          console.error('[api/designs POST]', error)
+          return Response.json({ error: error?.message ?? 'Failed to save draft' }, { status: 500 })
+        }
+      },
 
-	if (!designId || !elements) {
-		return new Response("designId and elements are required", { status: 400 });
-	}
+      DELETE: async ({ request }) => {
+        const { isAuthenticated, userId } = await auth()
+        if (!isAuthenticated || !userId) {
+          return Response.json({ error: 'Not authenticated' }, { status: 401 })
+        }
 
-	const col = await designs();
-	const now = new Date();
+        let body: any
+        try {
+          body = await request.json()
+        } catch {
+          return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+        }
 
-	const result = await col.updateOne(
-		{ userId, designId },
-		{
-			$set: {
-				userId,
-				designId,
-				name: name || "Untitled design",
-				garmentId,
-				garmentColor,
-				garmentSize,
-				garmentAttrs,
-				zoneId,
-				elements,
-				thumbnail,
-				view,
-				updatedAt: now,
-			},
-			$setOnInsert: { createdAt: now, status: "draft" },
-		},
-		{ upsert: true },
-	);
+        if (!body.designId) {
+          return Response.json({ error: 'designId required' }, { status: 400 })
+        }
 
-	return Response.json({ ok: true, upserted: result.upsertedCount > 0 });
-});
-
-// ─── DELETE — remove one design ───────────────────────────────────────────────
-export const DELETE = createAPIRoute(async ({ request }) => {
-	const { userId } = await getAuth(request);
-	if (!userId) return new Response("Unauthorized", { status: 401 });
-
-	const { designId } = await request.json();
-	if (!designId) return new Response("designId required", { status: 400 });
-
-	const col = await designs();
-	await col.deleteOne({ userId, designId });
-
-	return Response.json({ ok: true });
-});
+        try {
+          // deleteDraft() already scopes to clerkId + status:'draft' — an
+          // ordered design can't be deleted through this endpoint, and
+          // neither can another user's draft.
+          const deleted = await deleteDraft(body.designId, userId)
+          if (!deleted) {
+            return Response.json(
+              { error: 'Draft not found, not yours, or already ordered' },
+              { status: 404 }
+            )
+          }
+          return Response.json({ ok: true })
+        } catch (error: any) {
+          console.error('[api/designs DELETE]', error)
+          return Response.json({ error: error?.message ?? 'Failed to delete draft' }, { status: 500 })
+        }
+      },
+    },
+  },
+})

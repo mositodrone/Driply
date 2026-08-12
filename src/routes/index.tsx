@@ -22,7 +22,7 @@
 //    — Custom blended cursor (desktop only)
 // ============================================================
 
-import { SignInButton, SignUpButton, UserButton, useUser } from '@clerk/tanstack-start'
+import { SignInButton, SignUpButton, UserButton, useUser } from '@clerk/tanstack-react-start'
 import { useGSAP } from '@gsap/react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import gsap from 'gsap'

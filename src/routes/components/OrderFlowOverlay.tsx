@@ -72,12 +72,27 @@ CustomEase.create('slide',    'M0,0 C0.77,0 0.18,1 1,1')
 CustomEase.create('elastic-soft', 'M0,0 C0.14,0 0.27,0.3 0.38,0.7 0.46,0.95 0.52,1.05 0.6,1.08 0.72,1.12 0.8,1 1,1')
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type PayMethod = 'card' | 'transfer' | 'paystack' | 'cod'
+type PayMethod = 'card' | 'transfer' | 'cod'
+
+// What a completed payment hands back to the overlay. `authorization` is
+// Paystack's masked card metadata (last4 + brand) — never the PAN or CVV —
+// and is only present for card payments, once you're pulling it from your
+// backend's verify response (see StepPayment's payWithPaystackCard below).
+interface PaymentResult {
+  reference:      string
+  channel:        PayMethod
+  authorization?: { last4: string; brand?: string; bank?: string }
+}
 
 interface OrderFlowOverlayProps {
   open:             boolean
   onClose:          () => void
   designId:         string
+  // Clerk user id of the signed-in customer. Passed down from wherever this
+  // overlay is mounted (the dashboard route already has this from its own
+  // auth check) rather than re-derived here, so this file doesn't need to
+  // guess your Clerk client hook/import.
+  clerkId:          string
   // Base64 PNG of the full canvas (garment + all elements) exported via
   // stage.toDataURL() in dashboard.tsx when the order flow opens.
   // This is shown in StepPreview instead of the plain garment image.
@@ -718,44 +733,47 @@ function StepInfo({
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 2 — PAYMENT
 // ─────────────────────────────────────────────────────────────────────────────
-function StepPayment({ onNext, order }:{ onNext:(ref:string)=>void; order:OrderData }) {
+function StepPayment({ onNext, order, designId, clerkId, activeGarment }:{
+  onNext:(result:PaymentResult)=>void
+  order:OrderData
+  designId:string
+  clerkId:string
+  activeGarment?: any
+}) {
   const [payTab,    setPayTab]    = useState<'card'|'other'>('card')
   const [payMethod, setPayMethod] = useState<PayMethod>('card')
-  const [cardNum,   setCardNum]   = useState('')
-  const [cardName,  setCardName]  = useState('')
-  const [expiry,    setExpiry]    = useState('')
-  const [cvv,       setCvv]       = useState('')
-  const [cvvFocus,  setCvvFocus]  = useState(false)
   const [errors,    setErrors]    = useState<Record<string,string>>({})
   const [processing,setProcessing]= useState(false)
-  const cardRef   = useRef<HTMLDivElement>(null)
   const tabBarRef = useRef<HTMLDivElement>(null)
   const contentRef= useRef<HTMLDivElement>(null)
 
   // ── Real order amounts derived from shared order state ───────────────────
-  //  These flow into the pay button label and will be passed to Paystack
-  //  when real payment is wired. Nothing hardcoded.
+  //  These flow into the pay button label and Paystack's `amount` param.
   const deliveryCost = order.customer.delivery === 'express' ? 3500
     : order.customer.delivery === 'pickup' ? 0 : 1500
   const realTotal    = order.subtotal - order.discount + deliveryCost
   const realTotalFmt = `₦${realTotal.toLocaleString()}`
 
-  // Mock Paystack reference — same format Paystack uses (will be replaced
-  // by the real reference returned from paystack.js popup on go-live)
+  // Mock Paystack reference — same format Paystack uses (only used as a
+  // fallback / for the non-card manual methods below; the card path lets
+  // Paystack generate + return its own reference).
   function generateMockRef(): string {
     return `DRP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`
   }
 
-  // Card idle tilt
-  useGSAP(()=>{
-    gsap.to(cardRef.current,{rotationY:4,rotationX:-3,duration:4,ease:'sine.inOut',yoyo:true,repeat:-1,
-      transformPerspective:900,transformStyle:'preserve-3d'})
-  },{scope:cardRef})
-
-  // CVV flip
-  useEffect(()=>{
-    gsap.to(cardRef.current,{rotationY:cvvFocus?180:0,duration:0.55,ease:'power3.inOut',transformPerspective:900})
-  },[cvvFocus])
+  // Garment snapshot in the exact shape Design/Order models expect —
+  // built once here so both Paystack metadata and any future direct
+  // order write use identical field names.
+  const garmentSnapshot = {
+    id:    activeGarment?.garment?.id    ?? '',
+    name:  activeGarment?.garment?.name  ?? '',
+    color: {
+      label:  activeGarment?.color?.label  ?? '',
+      hex:    activeGarment?.color?.hex    ?? '',
+      filter: activeGarment?.color?.filter ?? '',
+    },
+    size:  activeGarment?.size ?? order.size,
+  }
 
   // Tab switch
   function switchTab(tab:'card'|'other') {
@@ -774,45 +792,122 @@ function StepPayment({ onNext, order }:{ onNext:(ref:string)=>void; order:OrderD
     gsap.to(tabIndicatorRef.current,{x:payTab==='other'?'100%':0,duration:0.3,ease:'power2.out'})
   },[payTab])
 
-  function validate() {
-    if(payTab==='other') return true
-    const e:Record<string,string>={}
-    if(cardNum.replace(/\s/g,'').length<16) e.cn='Enter full 16-digit number'
-    if(!cardName.trim())                    e.nm='Required'
-    if(expiry.length<7)                     e.ex='Enter MM / YY'
-    if(cvv.length<3)                        e.cv='Enter 3–4 digit CVV'
-    setErrors(e)
-    return Object.keys(e).length===0
+  // ── Card payments — handled entirely by Paystack's own iframe. We only
+  //  ever pass transaction params in; card number/CVV never touch our state
+  //  or our form. See index.html for the <script src="paystack.co/v1/inline.js">
+  //  tag this depends on. ────────────────────────────────────────────────────
+  async function payWithPaystackCard() {
+    const PaystackPop = (window as any).PaystackPop
+    if (!PaystackPop) {
+      setErrors({ pay: 'Paystack script not loaded — please refresh and try again.' })
+      return
+    }
+    if (!order.customer.email) {
+      setErrors({ pay: 'Customer email is required. Go back to step 2 and fill in your details.' })
+      return
+    }
+
+    setProcessing(true)
+    setErrors({})
+
+    try {
+      // ── Step 1: Initialize on backend (secret key never leaves the server) ──
+      const initRes = await fetch('/api/payments/initialize', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email:    order.customer.email,
+          amount:   realTotal * 100,  // kobo
+          currency: 'NGN',
+          channels: ['card'],
+          // Everything createOrder() needs — webhook uses this if the
+          // browser closes before confirmOrder() fires
+          metadata: {
+            clerkId,
+            designId,
+            garment:        garmentSnapshot,
+            quantities:     order.qty,
+            sizeColorSplit: order.sizeColorSplit,
+            totalPieces:    order.totalPcs,
+            customer:       order.customer,
+            notes:          order.notes,
+          },
+        }),
+      })
+
+      if (!initRes.ok) {
+        const body = await initRes.json().catch(() => ({}))
+        throw new Error(body?.error ?? 'Could not initialize payment. Please try again.')
+      }
+
+      const { access_code } = await initRes.json()
+
+      // ── Step 2: Open v2 popup with access_code ───────────────────────────
+      // resumeTransaction handles ALL card validation — wrong CVV, expired
+      // card, insufficient funds, 3DS — entirely inside Paystack's iframe.
+      // onSuccess only fires after the full card flow succeeds.
+      const popup = new PaystackPop()
+      popup.resumeTransaction(access_code, {
+        onSuccess: (transaction: any) => {
+          confirmOrder(transaction.reference)
+        },
+        onCancel: () => {
+          setProcessing(false)
+        },
+        onError: (err: any) => {
+          setProcessing(false)
+          setErrors({ pay: err?.message ?? 'Payment failed. Please check your card details and try again.' })
+        },
+      })
+    } catch (err: any) {
+      setProcessing(false)
+      setErrors({ pay: err?.message ?? 'Something went wrong. Please try again.' })
+    }
+  }
+
+  // POSTs the reference to our own backend, which re-verifies with Paystack
+  // server-side (never trusting the client) and writes the Order document.
+  // Idempotent — the webhook may beat this request to it, and vice versa;
+  // createOrder() no-ops on a duplicate paystackRef either way.
+  async function confirmOrder(reference: string) {
+    try {
+      const res = await fetch('/api/orders/confirm', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ reference }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error ?? `Confirm failed (${res.status})`)
+      }
+      const { order: savedOrder } = await res.json()
+      setProcessing(false)
+      onNext({
+        reference,
+        channel: 'card',
+        authorization: savedOrder?.authorization, // set by the confirm route from Paystack's verify response
+      })
+    } catch (err) {
+      setProcessing(false)
+      setErrors({ pay: 'Payment went through, but we couldn\u2019t confirm your order. Contact support with your reference: ' + reference })
+    }
   }
 
   function handlePay() {
-    if(!validate()) return
-    const btn = document.getElementById('ofo-pay-btn')
-    if(btn) gsap.timeline()
-      .to(btn,{scale:0.95,duration:0.1})
-      .to(btn,{scale:1.04,duration:0.2,ease:'back.out(2)'})
-      .to(btn,{scale:1,duration:0.15})
+    setErrors({})
+    if (payTab === 'card') { payWithPaystackCard(); return }
+
+    // Bank transfer / cash-on-delivery — no live gateway charge happens in
+    // the app for these, so there's nothing to "validate" here. This still
+    // needs a real backend order write with status:'pending_manual' rather
+    // than firing the paid-confirmation screen — leaving the mock ref here
+    // as a placeholder until that endpoint exists.
     setProcessing(true)
-    // TODO: replace setTimeout block with Paystack inline popup:
-    //   const handler = PaystackPop.setup({
-    //     key:       import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-    //     email:     order.customer.email,
-    //     amount:    realTotal * 100,  // Paystack expects kobo
-    //     currency:  'NGN',
-    //     ref:       generateMockRef(),
-    //     metadata:  { designId, totalPcs: order.totalPcs, garment: activeGarment?.garment?.name },
-    //     onSuccess: (transaction) => { setProcessing(false); onNext(transaction.reference) },
-    //     onCancel:  () => setProcessing(false),
-    //   })
-    //   handler.openIframe()
     setTimeout(() => {
       setProcessing(false)
-      onNext(generateMockRef())
-    }, 3800)
+      onNext({ reference: generateMockRef(), channel: payMethod })
+    }, 1200)
   }
-
-  // Card number formatted
-  const numGroups = cardNum.replace(/\D/g,'').padEnd(16,'•').match(/.{1,4}/g)??['••••','••••','••••','••••']
 
   return (
     <div className="ofo-step-content">
@@ -864,62 +959,15 @@ function StepPayment({ onNext, order }:{ onNext:(ref:string)=>void; order:OrderD
 
           {/* ── CARD TAB ── */}
           {payTab==='card' && (
-            <>
-              {/* 3D Card preview */}
-              <div className="flex justify-center mb-4" style={{perspective:'1000px'}}>
-                <div ref={cardRef} className="ofo-card-3d">
-                  {/* Front */}
-                  <div className="ofo-card-face ofo-card-front">
-                    <div className="ofo-card-shine"/>
-                    <div className="ofo-card-chip"/>
-                    <div className="ofo-card-number">
-                      {numGroups.map((g,i)=><span key={i} className="ofo-num-group">{g}</span>)}
-                    </div>
-                    <div className="ofo-card-bottom">
-                      <div>
-                        <div className="ofo-card-meta-lbl">Card Holder</div>
-                        <div className="ofo-card-meta-val">{cardName.toUpperCase()||'YOUR NAME'}</div>
-                      </div>
-                      <div>
-                        <div className="ofo-card-meta-lbl">Expires</div>
-                        <div className="ofo-card-meta-val">{expiry||'MM / YY'}</div>
-                      </div>
-                      {/* Logo */}
-                      <div className="flex items-center relative" style={{width:48,height:30}}>
-                        <div className="rounded-full absolute" style={{width:28,height:28,background:'#EB001B',left:0}}/>
-                        <div className="rounded-full absolute" style={{width:28,height:28,background:'#F79E1B',left:16,opacity:0.88}}/>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Back */}
-                  <div className="ofo-card-face ofo-card-back">
-                    <div className="ofo-mag-strip"/>
-                    <div className="ofo-cvv-row">
-                      <div className="ofo-cvv-tape"/>
-                      <span className="text-white/40 text-xs">CVV</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card form */}
-              <div className="ofo-card space-y-4">
-                <h3 className="ofo-card-title">Card Details</h3>
-                <Field label="Card Number" placeholder="1234  5678  9012  3456" maxLength={19}
-                  value={cardNum} onChange={v=>setCardNum(v.replace(/\D/g,'').slice(0,16).replace(/(.{4})/g,'$1 ').trim())}
-                  error={errors.cn}/>
-                <Field label="Name on Card" placeholder="Adaeze Kolade"
-                  value={cardName} onChange={setCardName} error={errors.nm}/>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Expiry" placeholder="MM / YY" maxLength={7}
-                    value={expiry} onChange={v=>{ const d=v.replace(/\D/g,'').slice(0,4); setExpiry(d.length>=3?d.slice(0,2)+' / '+d.slice(2):d) }}
-                    error={errors.ex}/>
-                  <Field label="CVV" type="password" placeholder="•••" maxLength={4}
-                    value={cvv} onChange={setCvv} error={errors.cv}
-                    onFocus={()=>setCvvFocus(true)} onBlur={()=>setCvvFocus(false)}/>
-                </div>
-              </div>
-            </>
+            <div className="ofo-card space-y-3 text-center py-10">
+              <div className="text-3xl mb-1">🔒</div>
+              <h3 className="ofo-card-title">Pay by Card</h3>
+              <p className="text-sm text-[#888] max-w-xs mx-auto leading-relaxed">
+                You'll enter your card number, expiry and CVV on Paystack's own secure
+                screen — Driply never sees or stores your card details.
+              </p>
+              {errors.pay && <p className="text-xs text-[#FF5B3A] pt-1">{errors.pay}</p>}
+            </div>
           )}
 
           {/* ── OTHER METHODS TAB ── */}
@@ -928,7 +976,6 @@ function StepPayment({ onNext, order }:{ onNext:(ref:string)=>void; order:OrderD
               <h3 className="ofo-card-title mb-1">Select Payment Method</h3>
               {([
                 {id:'transfer',icon:'🏦',label:'Bank Transfer',    sub:'Direct bank payment'},
-                {id:'paystack',icon:'⚡',label:'Paystack',          sub:'Pay securely online'},
                 {id:'cod',     icon:'💵',label:'Cash on Delivery',  sub:'Pay on receipt'},
               ] as const).map(m=>(
                 <button key={m.id} onClick={()=>{ setPayMethod(m.id);
@@ -968,7 +1015,11 @@ function StepPayment({ onNext, order }:{ onNext:(ref:string)=>void; order:OrderD
             gsap.fromTo('.ofo-btn-shimmer',{x:'-100%'},{x:'200%',duration:0.7,ease:'power1.inOut'})
           }}
           onMouseLeave={e=>gsap.to(e.currentTarget,{scale:1,duration:0.2})}>
-          <span className="relative z-10">Pay {realTotalFmt} securely →</span>
+          <span className="relative z-10">
+            {payTab==='card' ? `Pay ${realTotalFmt} securely →`
+              : payMethod==='cod' ? 'Place order — pay on delivery →'
+              : `Confirm order — I'll transfer ${realTotalFmt} →`}
+          </span>
           <div className="ofo-btn-shimmer"/>
         </button>
         <p className="text-xs text-center text-[#bbb]">🔒 256-bit SSL encryption · We never store card details</p>
@@ -1015,6 +1066,53 @@ function ProcessingAnim() {
   )
 }
 
+// ─── Paid-with card preview ───────────────────────────────────────────────────
+//  The idle-tilt 3D card from the old payment form, repurposed as a receipt
+//  visual: shown on the confirmation screen after a successful *card*
+//  payment, filled only with what Paystack's authorization object safely
+//  returns (last4 + brand — never the PAN, never the CVV). No live input,
+//  so the CVV-flip interaction from the old form doesn't carry over.
+function PaidCardPreview({ name, last4, brand }: { name: string; last4?: string; brand?: string }) {
+  const cardRef = useRef<HTMLDivElement>(null)
+  useGSAP(() => {
+    gsap.to(cardRef.current, {
+      rotationY: 4, rotationX: -3, duration: 4, ease: 'sine.inOut', yoyo: true, repeat: -1,
+      transformPerspective: 900, transformStyle: 'preserve-3d',
+    })
+  }, { scope: cardRef })
+
+  return (
+    <div className="flex justify-center mb-5" style={{ perspective: '1000px' }}>
+      <div ref={cardRef} className="ofo-card-3d">
+        <div className="ofo-card-face ofo-card-front">
+          <div className="ofo-card-shine" />
+          <div className="ofo-card-chip" />
+          <div className="ofo-card-number">
+            <span className="ofo-num-group">••••</span>
+            <span className="ofo-num-group">••••</span>
+            <span className="ofo-num-group">••••</span>
+            <span className="ofo-num-group">{last4 ?? '••••'}</span>
+          </div>
+          <div className="ofo-card-bottom">
+            <div>
+              <div className="ofo-card-meta-lbl">Card Holder</div>
+              <div className="ofo-card-meta-val">{name.toUpperCase() || 'CARDHOLDER'}</div>
+            </div>
+            <div>
+              <div className="ofo-card-meta-lbl">Paid With</div>
+              <div className="ofo-card-meta-val">{brand ?? 'Card'}</div>
+            </div>
+            <div className="flex items-center relative" style={{ width: 48, height: 30 }}>
+              <div className="rounded-full absolute" style={{ width: 28, height: 28, background: '#EB001B', left: 0 }} />
+              <div className="rounded-full absolute" style={{ width: 28, height: 28, background: '#F79E1B', left: 16, opacity: 0.88 }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 3 — CONFIRMED  (celebration, inline)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1039,6 +1137,11 @@ function StepConfirmed({ onClose, designId }:{ onClose:()=>void; designId:string
     : ctx?.order?.customer?.delivery === 'pickup' ? 'Self-collect'
     : 'Standard (7–14 days)'
   const city          = ctx?.order?.customer?.city ?? null
+
+  // Only card payments carry a masked `authorization` block — bank
+  // transfer / cash-on-delivery have no card to show a receipt for.
+  const paidByCard     = ctx?.channel === 'card' && !!ctx?.authorization
+  const fullName       = [ctx?.order?.customer?.firstName, ctx?.order?.customer?.lastName].filter(Boolean).join(' ')
 
   const STEPS_TL  = [
     {dot:'#C8F135',label:'Order confirmed',  sub:'Right now'},
@@ -1132,6 +1235,15 @@ function StepConfirmed({ onClose, designId }:{ onClose:()=>void; designId:string
           <br/>We'll keep you updated every step of the way.
         </p>
 
+        {/* Paid-with card receipt — only for card payments */}
+        {paidByCard && (
+          <PaidCardPreview
+            name={fullName}
+            last4={ctx.authorization.last4}
+            brand={ctx.authorization.brand}
+          />
+        )}
+
         {/* Order ref */}
         <div data-conf="ref" className="ofo-ref-box mb-4">
           <div className="ofo-ref-shimmer"/>
@@ -1214,7 +1326,7 @@ function StepConfirmed({ onClose, designId }:{ onClose:()=>void; designId:string
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN OVERLAY COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
-export function OrderFlowOverlay({ open, onClose, designId, activeGarment, designPreviewUrl }: OrderFlowOverlayProps & { activeGarment?: any; designPreviewUrl?: string }) {
+export function OrderFlowOverlay({ open, onClose, designId, clerkId, activeGarment, designPreviewUrl }: OrderFlowOverlayProps & { activeGarment?: any; designPreviewUrl?: string }) {
   const [step,  setStep]  = useState(0)
   const [order, setOrder] = useState<OrderData>(DEFAULT_ORDER)
 
@@ -1226,7 +1338,10 @@ export function OrderFlowOverlay({ open, onClose, designId, activeGarment, desig
   // ── Write session on payment confirm ────────────────────────────────────────
   //  Called by StepPayment's onNext before advancing to StepConfirmed.
   //  This is the single source of truth that order-confirmed reads from.
-  function writeSession(paymentRef: string) {
+  //  NOTE: this is client-side optimistic state for the celebration screen —
+  //  it is NOT what should back /my-designs. That needs the order written to
+  //  your DB after server-side verification (see StepPayment's TODOs).
+  function writeSession(result: PaymentResult) {
     try {
       sessionStorage.setItem('driply_order', JSON.stringify({
         designId,
@@ -1236,11 +1351,13 @@ export function OrderFlowOverlay({ open, onClose, designId, activeGarment, desig
           colorLabel:     COLORS[order.colorIdx]?.label,
           sizeColorSplit: order.sizeColorSplit,
         },
-        totalPieces:  order.totalPcs,
-        total:        order.total,
-        paymentRef,              // mock ref now, real Paystack ref on go-live
-        isPaid:       true,      // flag that distinguishes paid order from draft
-        createdAt:    new Date().toISOString(),
+        totalPieces:    order.totalPcs,
+        total:          order.total,
+        paymentRef:     result.reference,
+        channel:        result.channel,       // 'card' | 'transfer' | 'cod'
+        authorization:  result.authorization, // masked card metadata — card only
+        isPaid:         result.channel === 'card', // transfer/cod are pending until manually reconciled
+        createdAt:      new Date().toISOString(),
       }))
     } catch { /* storage full — non-critical */ }
   }
@@ -1291,9 +1408,13 @@ export function OrderFlowOverlay({ open, onClose, designId, activeGarment, desig
   if(!open && !panelRef.current) return null
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-50" style={{pointerEvents:open?'all':'none'}}>
+    <div ref={overlayRef} className="fixed inset-0 z-50" style={{ pointerEvents: open ? 'auto' : 'none' }}>
       {/* Backdrop */}
-      <div ref={backdropRef} className="absolute inset-0 bg-black/50 backdrop-blur-sm" style={{opacity:0}}/>
+      <div
+        ref={backdropRef}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        style={{ opacity: 0, pointerEvents: open ? 'auto' : 'none' }}   // ← this line
+      />
 
       {/* Panel */}
       <div ref={panelRef}
@@ -1345,7 +1466,7 @@ export function OrderFlowOverlay({ open, onClose, designId, activeGarment, desig
         <div ref={stepPanelRef} className="flex-1 overflow-y-auto">
           {step===0 && <StepPreview onNext={()=>goToStep(1)} order={order} setOrder={setOrder} activeGarment={activeGarment} designPreviewUrl={designPreviewUrl}/>}
           {step===1 && <StepInfo    onNext={()=>goToStep(2)} order={order} setOrder={setOrder}/>}
-          {step===2 && <StepPayment onNext={(ref)=>{ writeSession(ref); goToStep(3) }} order={order}/>}
+          {step===2 && <StepPayment onNext={(result)=>{ writeSession(result); goToStep(3) }} order={order} designId={designId} clerkId={clerkId} activeGarment={activeGarment}/>}
           {step===3 && <StepConfirmed onClose={onClose} designId={designId}/>}
         </div>
       </div>
