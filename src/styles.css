@@ -465,6 +465,12 @@ body {
   padding-top: 6rem;
   overflow: hidden;
 }
+@media (max-width: 900px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+    min-height: auto; /* 100vh forced on a stacked 2-section layout would push the shirt visual far below the fold */
+  }
+}
 @utility hero-left {
   display: flex;
   flex-direction: column;
@@ -535,7 +541,7 @@ body {
   color: #888;
   margin-top: 0.15rem;
 }
-@utility btn-hero {
+@utility btn-hero-primary {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -550,7 +556,7 @@ body {
   text-decoration: none;
   transition: background 0.2s;
 }
-.btn-hero:hover {
+.btn-hero-primary:hover {
   background: #9bbf10;
   color: white;
 }
@@ -567,6 +573,23 @@ body {
 }
 .btn-hero-ghost:hover {
   color: #0e0e0e;
+}
+
+/* ── Hero CTA row — this was also completely undefined until now (a
+   second, separate bug — the button container had zero layout rules).
+   Mobile stacking added in the same place since it's the same fix. ── */
+@utility hero-ctas {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+@utility hero-cta-item {
+  display: inline-flex;
+}
+@media (max-width: 640px) {
+  .hero-ctas { flex-direction: column; align-items: stretch; gap: 0.85rem; }
+  .btn-hero-primary, .btn-hero-ghost { justify-content: center; width: 100%; }
 }
 @utility play-btn {
   width: 44px;
@@ -832,30 +855,20 @@ body {
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
 }
 
-/* ── Dashboard preview ── */
-@utility dash-body {
-  display: grid;
-  grid-template-columns: 200px 1fr 220px;
-  height: 460px;
-}
-@utility dash-panel-left {
-  background: #1e1e1e;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 1.25rem 1rem;
-  overflow: hidden;
-}
+/* ── Dashboard preview ──
+   dash-body/dash-panel-left/dash-panel-right previously defined here are
+   removed — confirmed dead (index.tsx's DashPreview component only
+   references them in comments; the live JSX uses .dash-preview-card with
+   inline styles instead). These names collided with the real dashboard's
+   own separate .dash-body/.dash-panel-left/.dash-panel-right definitions
+   elsewhere in this file, which is a real page, not a marketing mockup —
+   removing the dead copies here eliminates that collision risk. */
 @utility dash-canvas {
   background: #2a2a2a;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  overflow: hidden;
-}
-@utility dash-panel-right {
-  background: #1e1e1e;
-  border-left: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 1.25rem 1rem;
   overflow: hidden;
 }
 @utility dash-panel-label {
@@ -997,13 +1010,6 @@ body {
   overflow: hidden;
   font-family: var(--font-body);
 }
-@utility dash-body {
-  display: grid;
-  grid-template-columns: 220px 1fr 260px;
-  flex: 1;
-  overflow: hidden;
-}
-
 /* ── Topbar ── */
 @utility dash-topbar {
   display: flex;
@@ -1015,6 +1021,21 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   flex-shrink: 0;
   z-index: 10;
+}
+@media (max-width: 900px) {
+  .dash-topbar {
+    height: auto;
+    min-height: 52px;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.6rem 0.85rem;
+  }
+  /* Beta badge and save-status text are non-essential — dropped below
+     900px so the three action buttons (Submit/Preview/Quote) have room
+     without wrapping into a cramped third row. */
+  .dash-topbar-meta {
+    display: none;
+  }
 }
 @utility dash-back-btn {
   font-size: 0.78rem;
@@ -1206,12 +1227,6 @@ body {
 }
 
 /* ── Canvas area ── */
-@utility dash-canvas-area {
-  display: flex;
-  flex-direction: column;
-  background: #111213;
-  overflow: hidden;
-}
 @utility dash-canvas-toolbar {
   display: flex;
   align-items: center;
@@ -1335,26 +1350,6 @@ body {
   transform: scale(1.2);
 }
 
-/* ── Fix: canvas area now uses position:relative + flex-1 ── */
-/* The existing .dash-canvas-area utility becomes: */
-@utility dash-canvas-area {
-  display: flex;
-  flex-direction: column;
-  background: #111213;
-  overflow: hidden;
-  flex: 1;
-  min-width: 0; /* <-- critical: prevents grid blowout */
-}
-
-/* ── 3D flip context on dash-body ── */
-@utility dash-body {
-  display: grid;
-  grid-template-columns: 220px 1fr 260px;
-  flex: 1;
-  overflow: hidden;
-  perspective: 1200px; /* <-- enables 3D for child flip */
-}
-
 /* ── Toast ── */
 @utility dash-toast {
   display: inline-flex;
@@ -1398,6 +1393,105 @@ body {
   flex: 1;
   overflow: hidden;
   perspective: 1200px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE/TABLET (≤900px) — bottom-sheet editor layout
+   Canvas becomes the permanent full-width base layer; Layers (left panel)
+   and Properties (right panel) become dismissible sheets that slide up
+   from the bottom and partially cover the canvas, rather than permanent
+   grid columns. Canvas stays visible/interactive underneath at all times —
+   this is the Canva-style pattern, chosen deliberately over a full-tab-swap
+   or a naive vertical stack (which would force scrolling past the full
+   Layers list just to reach the canvas).
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .dash-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    padding-bottom: 56px; /* reserve room for the permanent bottom bar below */
+  }
+
+  .dash-panel-left,
+  .dash-panel-right {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 56px; /* sits ABOVE the bar, not over it — the bar stays visible
+                     and tappable even while a sheet is fully open */
+    width: 100%;
+    max-height: calc(75vh - 56px);
+    max-height: calc(75dvh - 56px);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.45);
+    z-index: 40;
+    /* Panels are JS-driven (dashboard.tsx's mobilePanel state) rather than
+       toggled by a CSS class alone — GSAP handles the actual slide
+       transform/transition for consistency with the rest of the app's
+       animation language, so no CSS transition is declared here to avoid
+       fighting GSAP's own tweened values. Initial/closed state: */
+    transform: translateY(100%);
+    overflow-y: auto; /* was overflow:hidden — a shorter sheet needs the
+                          whole panel scrollable, not just inner sections */
+    border-right: none;
+    border-left: none;
+  }
+
+  .dash-mobile-backdrop {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 56px; /* stop above the bar — it stays reachable even with the backdrop up */
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 35;
+    opacity: 0; /* GSAP-driven, same reasoning as above */
+  }
+
+  /* ── Permanent bottom bar ──────────────────────────────────────────────
+     Replaces the earlier floating pill buttons, which had zero visual
+     permanence and no reason for anyone to guess they meant "tap to
+     reveal a panel." This bar never disappears — it's always present at
+     the bottom of the screen, which is the actual fix for "how do the
+     panels remain prevalent on small screens": they're never fully gone,
+     only collapsed to this minimal strip until expanded. ── */
+  .dash-mobile-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 56px;
+    z-index: 45; /* above both the backdrop and the sheets — always reachable */
+    display: flex;
+    background: #181a1b;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .dash-mobile-bar-seg {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.78rem;
+    font-weight: 500;
+    border: none;
+    background: none;
+  }
+  .dash-mobile-bar-seg:active { background: rgba(255, 255, 255, 0.05); }
+  .dash-mobile-bar-seg.active {
+    color: #c8f135;
+    background: rgba(200, 241, 53, 0.08);
+  }
+  .dash-mobile-bar-seg:first-child { border-right: 1px solid rgba(255, 255, 255, 0.06); }
+  .dash-mobile-bar-arrow {
+    font-size: 0.65rem;
+    transition: transform 0.25s;
+    display: inline-block;
+  }
+  .dash-mobile-bar-seg.active .dash-mobile-bar-arrow {
+    transform: rotate(180deg); /* points down while open — "tap to collapse" */
+  }
 }
 
 /* ── Order Preview root ── */
@@ -2234,7 +2328,7 @@ body {
 }
 /* 3D card */
 @utility ofo-card-3d {
-  width: 320px;
+  width: min(320px, 85vw);
   height: 200px;
   position: relative;
   transform-style: preserve-3d;

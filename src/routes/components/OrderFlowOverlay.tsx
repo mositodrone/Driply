@@ -247,7 +247,8 @@ function StepPreview({
 }) {
   const shirtRef = useRef<HTMLDivElement>(null)
 
-  const color    = COLORS[order.colorIdx]
+  const garmentColors = activeGarment?.garment?.colors ?? COLORS.map((c:any)=>({...c, hex:c.bg}))
+  const color = (garmentColors?.[order.colorIdx] ?? garmentColors?.[0] ?? COLORS[0]) as any
   const totalPcs = Object.values(order.qty).reduce((a,b)=>a+b,0)
   const subtotal = totalPcs * BASE_PRICE
   const discount = order.promoOk ? Math.round(subtotal*0.1) : 0
@@ -277,7 +278,6 @@ function StepPreview({
 
   const garmentSrc    = activeGarment?.garment?.images?.front ?? null
   const garmentName   = activeGarment?.garment?.name ?? 'Custom Garment'
-  const garmentColors = activeGarment?.garment?.colors ?? COLORS.map((c:any)=>({...c, hex:c.bg}))
   const garmentSizes  = activeGarment?.garment?.sizes ?? SIZES
 
   const [promo, setPromo] = useState('')
@@ -333,8 +333,8 @@ function StepPreview({
   )
 
   return (
-    <div className="ofo-step-content">
-      <div className="ofo-two-col">
+    <div className="ofo-step-content" style={{ overflow: 'hidden' }}>
+      <div className="ofo-two-col" style={{ alignItems: 'start', overflow: 'hidden' }}>
         <div className="space-y-4">
 
           {/* Product card */}
@@ -342,7 +342,7 @@ function StepPreview({
             <div className="flex gap-6 items-start">
               <div className="relative flex-shrink-0">
                 <div className="w-[170px] h-[210px] rounded-2xl flex items-center justify-center overflow-hidden"
-                  style={{background:`${color.bg}18`,perspective:'800px'}}>
+                  style={{background:`${color?.hex ?? color?.bg ?? "#C8F135"}18`,perspective:'800px'}}>
                   <div ref={shirtRef} style={{transformStyle:'preserve-3d'}}>
                     {/* designPreviewUrl = stage.toDataURL() — shows garment + all
                         design elements as one flat image. Falls back to plain
@@ -355,7 +355,7 @@ function StepPreview({
                         style={{width:150,height:'auto',objectFit:'contain',
                           filter:activeGarment?.color?.filter??'none',transition:'filter 0.35s ease'}}/>
                     ) : (
-                      <ShirtSVG color={color.bg} collar={color.collar} size={150}/>
+                      <ShirtSVG color={color?.hex ?? color?.bg ?? "#C8F135"} collar={color?.collar ?? "#aaa"} size={150}/>
                     )}
                   </div>
                 </div>
@@ -407,7 +407,7 @@ function StepPreview({
               Minimum 10 pieces total.
             </p>
 
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {garmentSizes.map((s:string)=>{
                 const qty      = order.qty[s]??0
                 const split    = order.sizeColorSplit[s]??{}
@@ -538,24 +538,24 @@ function StepPreview({
           </div>
         </div>
 
-        {/* Summary sidebar */}
-        <div className="space-y-3">
+        {/* Summary sidebar — needs its own scroll so CTA is always reachable */}
+        <div className="space-y-3" style={{ overflowY: 'auto', maxHeight: '100%' }}>
           <div className="ofo-summary-card">
             <h3 className="ofo-card-title mb-4">Order Summary</h3>
             {/* Mini preview */}
             <div className="flex items-center gap-3 bg-[#F8F5EF] rounded-xl p-3 mb-4">
               <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden"
-                style={{background:`${color.bg}22`}}>
+                style={{background:`${color?.hex ?? color?.bg ?? "#C8F135"}22`}}>
                 {garmentSrc ? (
                   <img src={garmentSrc} alt={garmentName}
                     style={{width:38,height:'auto',objectFit:'contain',filter:activeGarment?.color?.filter??'none'}}/>
                 ) : (
-                  <ShirtSVG color={color.bg} collar={color.collar} size={38}/>
+                  <ShirtSVG color={color?.hex ?? color?.bg ?? "#C8F135"} collar={color?.collar ?? "#aaa"} size={38}/>
                 )}
               </div>
               <div>
                 <div className="text-sm font-semibold text-[#0E0E0E]">{garmentName}</div>
-                <div className="text-xs text-[#888]">{totalPcs} pcs · {color.label}</div>
+                <div className="text-xs text-[#888]">{totalPcs} pcs · {color?.label ?? ''}</div>
               </div>
             </div>
             <div className="space-y-2.5 mb-4">
@@ -673,7 +673,7 @@ function StepInfo({
       <div ref={formRef} className="max-w-2xl mx-auto space-y-4">
         <div className="ofo-card">
           <h3 className="ofo-card-title mb-5">Contact Details</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="First Name" placeholder="Adaeze" value={c.firstName} onChange={v=>{set('firstName')(v);setErrors(e=>({...e,fn:''}))}} error={errors.fn}/>
             <Field label="Last Name"  placeholder="Kolade"  value={c.lastName}  onChange={v=>{set('lastName')(v); setErrors(e=>({...e,ln:''}))}} error={errors.ln}/>
             <Field label="Email" type="email" placeholder="adaeze@example.com" value={c.email} onChange={v=>{set('email')(v);setErrors(e=>({...e,em:''}))}} error={errors.em} className="col-span-2"/>
@@ -685,7 +685,7 @@ function StepInfo({
           <h3 className="ofo-card-title mb-5">Delivery Address</h3>
           <div className="space-y-4">
             <Field label="Street Address" placeholder="14 Bourdillon Road" value={c.address} onChange={v=>{set('address')(v);setErrors(e=>({...e,ad:''}))}} error={errors.ad}/>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Field label="City"  placeholder="Lagos"       value={c.city}  onChange={v=>{set('city')(v);setErrors(e=>({...e,ci:''}))}} error={errors.ci}/>
               <Field label="State" placeholder="Lagos State" value={c.state} onChange={set('state')}/>
               <Field label="ZIP"   placeholder="100001"      value={c.zip}   onChange={set('zip')} maxLength={8}/>
@@ -1330,6 +1330,19 @@ export function OrderFlowOverlay({ open, onClose, designId, clerkId, activeGarme
   const [step,  setStep]  = useState(0)
   const [order, setOrder] = useState<OrderData>(DEFAULT_ORDER)
 
+  // ── Loading state — must be declared here, before any early return ──────────
+  // Flips to true 320ms after open, giving GSAP time to animate the panel in.
+  // Showing the spinner while ready===false prevents a blank flash.
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(() => setReady(true), 320)
+      return () => clearTimeout(t)
+    } else {
+      setReady(false)
+    }
+  }, [open])
+
   const overlayRef   = useRef<HTMLDivElement>(null)
   const panelRef     = useRef<HTMLDivElement>(null)
   const stepPanelRef = useRef<HTMLDivElement>(null)
@@ -1413,13 +1426,37 @@ export function OrderFlowOverlay({ open, onClose, designId, clerkId, activeGarme
       <div
         ref={backdropRef}
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        style={{ opacity: 0, pointerEvents: open ? 'auto' : 'none' }}   // ← this line
+        style={{ opacity: 0, pointerEvents: open ? 'auto' : 'none' }}
       />
+
+      {/* ── Loading indicator shown while panel slides in ── */}
+      {open && !ready && (
+        <div className="absolute inset-0 flex items-end justify-center pb-8 pointer-events-none z-10">
+          <div style={{
+            display:        'flex',
+            flexDirection:  'column',
+            alignItems:     'center',
+            gap:             10,
+          }}>
+            <div style={{
+              width:        40, height: 40,
+              borderRadius: '50%',
+              border:       '3px solid rgba(248,245,239,0.15)',
+              borderTopColor: '#C8F135',
+              animation:    'ofo-spin 0.7s linear infinite',
+            }}/>
+            <span style={{ fontSize: '0.75rem', color: 'rgba(248,245,239,0.5)', fontFamily: 'Syne, sans-serif' }}>
+              Preparing your order…
+            </span>
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes ofo-spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Panel */}
       <div ref={panelRef}
         className="absolute inset-x-0 bottom-0 bg-[#F8F5EF] rounded-t-[28px] flex flex-col"
-        style={{height:'94vh', transform:'translateY(100%)'}}>
+        style={{height:'94vh', maxHeight: '94dvh', transform:'translateY(100%)'}}>
 
         {/* ── Panel header ── */}
         <div className="flex-shrink-0 flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/[0.06]">

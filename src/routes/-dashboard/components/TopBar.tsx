@@ -1,43 +1,29 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 
 interface TopBarProps {
-  projectName:    string
-  onRename:       (name: string) => void
-  onOpenPreview:  () => void   // Export Preview — opens ExportPreviewModal
-  onOpenFlow:     () => void   // Request Quote — opens OrderFlowOverlay
-  hasUnsaved:     boolean
-  savedAt:        Date | null
-  onBack:         (e: React.MouseEvent) => void
-  /** Both action buttons are disabled until a garment is active AND
-   *  at least one design element has been placed on the canvas. */
-  canAct:         boolean
+  projectName:      string
+  onRename:         (name: string) => void
+  onOpenPreview:    () => void   // Export Preview — opens ExportPreviewModal
+  onOpenFlow:       () => void   // Request Quote — opens OrderFlowOverlay
+  onOpenSubmission: () => void   // Submit Design — opens DesignSubmissionOverlay
+  hasUnsaved:       boolean
+  savedAt:          Date | null
+  onBack:           (e: React.MouseEvent) => void
+  canAct:           boolean
+  hasGarment:       boolean
+  hasElements:      boolean
 }
 
 export function TopBar({
   projectName, onRename,
-  onOpenPreview, onOpenFlow,
+  onOpenPreview, onOpenFlow, onOpenSubmission,
   hasUnsaved, savedAt, onBack,
-  canAct,
+  canAct, hasGarment, hasElements,
 }: TopBarProps) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState(projectName)
   const inputRef              = useRef<HTMLInputElement>(null)
-
-  // Which disabled-button hint is being shown via tap (touch devices don't
-  // get hover, so clicking a disabled button surfaces the tooltip instead
-  // of doing nothing). Hover still works on its own via CSS below — this
-  // state only covers the tap case, and auto-dismisses.
-  const [tapHint, setTapHint] = useState<'preview' | 'flow' | null>(null)
-  const tapHintTimeout        = useRef<ReturnType<typeof setTimeout>>()
-
-  function showTapHint(which: 'preview' | 'flow') {
-    setTapHint(which)
-    clearTimeout(tapHintTimeout.current)
-    tapHintTimeout.current = setTimeout(() => setTapHint(null), 2200)
-  }
-
-  useEffect(() => () => clearTimeout(tapHintTimeout.current), [])
 
   function startEdit() {
     setDraft(projectName)
@@ -56,11 +42,13 @@ export function TopBar({
     if (e.key === 'Escape') { setEditing(false)            }
   }
 
-  // NOTE: no `pointer-events-none` here on purpose — that would block the
-  // button from ever receiving hover/click, which is what made the old
-  // `title` tooltip unreachable. onClick is guarded per-button instead
-  // (see below) so the disabled state still can't trigger the real action.
   const disabledClass = 'opacity-30 cursor-not-allowed'
+
+  // Granular tooltip — tells user exactly what's missing
+  const disabledTitle =
+    !hasGarment  ? 'Pick a garment from the selector first' :
+    !hasElements ? 'Add at least one element to your design' :
+                   ''
 
   return (
     <header data-dash="topbar" className="dash-topbar">
@@ -92,83 +80,53 @@ export function TopBar({
           </button>
         )}
 
-        <span className="dash-status-badge">
+        <span className="dash-status-badge dash-topbar-meta">
           <span className="dash-status-dot" /> Beta
         </span>
 
         {hasUnsaved && (
-          <span className="text-[0.62rem] text-[#FFD60A]/70 hidden sm:block">
+          <span className="dash-topbar-meta text-[0.62rem] text-[#FFD60A]/70">
             ● Unsaved
           </span>
         )}
         {!hasUnsaved && savedAt && (
-          <span className="text-[0.62rem] text-white/22 hidden sm:block">
+          <span className="dash-topbar-meta text-[0.62rem] text-white/22">
             Saved {savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Submit Design — opens unprocessed order flow */}
+        <button
+          className={`dash-btn-ghost transition-opacity ${!canAct ? disabledClass : ''}`}
+          onClick={canAct ? onOpenSubmission : undefined}
+          title={canAct ? 'Submit your design for a quote' : disabledTitle}
+          aria-disabled={!canAct}
+        >
+          Submit Design ✦
+        </button>
+
         {/* Export Preview — disabled until garment + element present */}
-        <div className="relative group">
-          <button
-            className={`dash-btn-ghost transition-opacity ${!canAct ? disabledClass : ''}`}
-            onClick={canAct ? onOpenPreview : () => showTapHint('preview')}
-            aria-disabled={!canAct}
-            aria-describedby={!canAct ? 'topbar-tip-preview' : undefined}
-          >
-            Export Preview ↓
-          </button>
-          {!canAct && (
-            <TopBarTip id="topbar-tip-preview" visible={tapHint === 'preview'}>
-              Add an element to your design first
-            </TopBarTip>
-          )}
-        </div>
+        <button
+          className={`dash-btn-ghost transition-opacity ${!canAct ? disabledClass : ''}`}
+          onClick={canAct ? onOpenPreview : undefined}
+          title={canAct ? 'Preview your design' : disabledTitle}
+          aria-disabled={!canAct}
+        >
+          Export Preview ↓
+        </button>
 
         {/* Request Quote — same guard, triggers order flow */}
-        <div className="relative group">
-          <button
-            className={`dash-btn-lime transition-opacity ${!canAct ? disabledClass : ''}`}
-            onClick={canAct ? onOpenFlow : () => showTapHint('flow')}
-            aria-disabled={!canAct}
-            aria-describedby={!canAct ? 'topbar-tip-flow' : undefined}
-          >
-            Request Quote →
-          </button>
-          {!canAct && (
-            <TopBarTip id="topbar-tip-flow" visible={tapHint === 'flow'}>
-              Add an element to your design first
-            </TopBarTip>
-          )}
-        </div>
+        <button
+          className={`dash-btn-lime transition-opacity ${!canAct ? disabledClass : ''}`}
+          onClick={canAct ? onOpenFlow : undefined}
+          title={canAct ? 'Request a quote' : disabledTitle}
+          aria-disabled={!canAct}
+        >
+          Request Quote →
+        </button>
       </div>
     </header>
-  )
-}
-
-// ─── Disabled-button tooltip ───────────────────────────────────────────────────
-//  Shows on hover (via CSS `group-hover`, so no JS needed for desktop) or
-//  briefly on tap (via the `visible` prop, driven by tapHint state above —
-//  touch devices don't fire hover at all). Positioned above the button it
-//  belongs to; the parent must have `className="relative group"`.
-function TopBarTip({ id, visible, children }: { id: string; visible: boolean; children: React.ReactNode }) {
-  return (
-    <div
-      id={id}
-      role="tooltip"
-      className={`absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full z-50
-        px-3 py-1.5 rounded-lg whitespace-nowrap
-        text-[0.68rem] text-white/85 bg-[#141416] border border-white/10 shadow-lg
-        transition-all duration-150 ease-out
-        ${visible
-          ? 'opacity-100 scale-100'
-          : 'opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100'}
-      `}
-    >
-      {children}
-      {/* Little arrow pointing down at the button */}
-      <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-[#141416] border-r border-b border-white/10" />
-    </div>
   )
 }

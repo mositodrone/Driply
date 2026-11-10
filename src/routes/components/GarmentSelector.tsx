@@ -11,7 +11,7 @@
 
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type TouchEvent } from 'react'
 import {
   GARMENTS, type Garment, type GarmentColor,
   getDefaultColor, getDefaultSize,
@@ -152,7 +152,17 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
     if (!overlay || !panel) return
 
     if (open && mounted) {
-      document.body.style.overflow = 'hidden'
+      // ── Scroll lock ──────────────────────────────────────────────────────
+      //  `overflow: hidden` on body is a well-known no-op on iOS Safari —
+      //  the page still scrolls/bounces behind the modal. position:fixed
+      //  with the scroll offset preserved as a negative top is the actual
+      //  fix; scroll position is restored on close below.
+      const scrollY = window.scrollY
+      document.body.style.position = 'fixed'
+      document.body.style.top      = `-${scrollY}px`
+      document.body.style.width    = '100%'
+      document.body.dataset.scrollY = String(scrollY)
+
       gsap.set(panel,   { y: 60, opacity: 0, scale: 0.97 })
       gsap.set(overlay, { opacity: 0 })
       const tl = gsap.timeline()
@@ -160,7 +170,16 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
       tl.to(panel,   { y: 0, opacity: 1, scale: 1, duration: 0.45, ease: 'back.out(1.4)' }, '-=0.15')
       tl.from('.gs-panel-item', { y: 16, opacity: 0, stagger: 0.05, duration: 0.35, ease: 'power3.out' }, '-=0.2')
     } else if (!open && overlay.style.opacity !== '0') {
-      const tl = gsap.timeline({ onComplete: () => { document.body.style.overflow = '' } })
+      const tl = gsap.timeline({
+        onComplete: () => {
+          const savedY = Number(document.body.dataset.scrollY ?? '0')
+          document.body.style.position = ''
+          document.body.style.top      = ''
+          document.body.style.width    = ''
+          delete document.body.dataset.scrollY
+          window.scrollTo(0, savedY)
+        },
+      })
       tl.to(panel,   { y: 30, opacity: 0, scale: 0.97, duration: 0.25, ease: 'power2.in' })
       tl.to(overlay, { opacity: 0, duration: 0.2 }, '-=0.1')
     }
@@ -239,6 +258,21 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
     return () => window.removeEventListener('keydown', fn)
   }, [open, navigate, onClose])
 
+  // ── Swipe nav (touch devices have no keyboard) ─────────────────────────────
+  const touchStartX = useRef<number | null>(null)
+  const SWIPE_THRESHOLD = 50 // px — deliberate swipe, not an accidental drag
+
+  function onTouchStart(e: TouchEvent) {
+    touchStartX.current = e.touches[0].clientX
+  }
+  function onTouchEnd(e: TouchEvent) {
+    if (touchStartX.current === null) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+    if (Math.abs(dx) < SWIPE_THRESHOLD) return
+    navigate(dx < 0 ? 1 : -1) // swipe left → next, swipe right → previous
+  }
+
   if (!open && !overlayRef.current) return null
 
   const activeViews = availableViews(garment)
@@ -255,7 +289,7 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
         }
         .gs-panel {
           background: #F8F5EF; border-radius: 28px;
-          width: min(900px, 100%); max-height: 92vh;
+          width: min(900px, 100%); max-height: 92vh; max-height: 92dvh;
           display: grid; grid-template-columns: 1fr 1fr;
           overflow: hidden;
           box-shadow: 0 32px 80px rgba(0,0,0,0.35);
@@ -290,6 +324,7 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
           background: none; color: #888; white-space: nowrap; flex-shrink: 0;
         }
         .gs-view-btn.active { background: #0E0E0E; color: white; }
+        .gs-view-btn:active { transform: scale(0.94); }
 
         .gs-img-wrap { width: 100%; max-width: 260px; transform-style: preserve-3d; }
         .gs-img { width: 100%; height: auto; object-fit: contain; border-radius: 12px; }
@@ -322,7 +357,7 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
           transition: background 0.15s, transform 0.15s;
         }
         .gs-nav-btn:hover  { background: #0E0E0E; color: white; }
-        .gs-nav-btn:active { transform: scale(0.92); }
+        .gs-nav-btn:active { transform: scale(0.88); }
 
         /* Dot indicators */
         .gs-dots { display: flex; gap: 6px; justify-content: center; padding: 1rem; }
@@ -336,7 +371,7 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
         .gs-right {
           padding: 1.75rem; overflow-y: auto;
           display: flex; flex-direction: column; gap: 1rem;
-          max-height: 92vh;
+          max-height: 92vh; max-height: 92dvh;
         }
         .gs-header { display: flex; align-items: flex-start; justify-content: space-between; }
         .gs-category { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #888; }
@@ -351,7 +386,8 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
           color: #888; font-size: 0.9rem; flex-shrink: 0;
           transition: background 0.15s, color 0.15s;
         }
-        .gs-close-btn:hover { background: #0E0E0E; color: white; }
+        .gs-close-btn:hover  { background: #0E0E0E; color: white; }
+        .gs-close-btn:active { transform: scale(0.9); }
 
         .gs-section-label {
           font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em;
@@ -366,7 +402,8 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
           width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
           border-width: 2px; border-style: solid; transition: all 0.15s;
         }
-        .gs-swatch:hover { transform: scale(1.18); }
+        .gs-swatch:hover  { transform: scale(1.18); }
+        .gs-swatch:active { transform: scale(1.05); }
 
         /* Sizes */
         .gs-sizes { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -376,6 +413,7 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
           color: #3A3A3A; transition: all 0.15s;
         }
         .gs-size-btn:hover  { border-color: rgba(14,14,14,0.3); }
+        .gs-size-btn:active { transform: scale(0.94); }
         .gs-size-btn.active { background: #0E0E0E; color: white; border-color: #0E0E0E; }
 
         /* Attributes */
@@ -386,6 +424,7 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
           color: #3A3A3A; transition: all 0.15s;
         }
         .gs-attr-btn:hover  { border-color: rgba(14,14,14,0.25); }
+        .gs-attr-btn:active { transform: scale(0.94); }
         .gs-attr-btn.active { background: #0E0E0E; color: white; border-color: #0E0E0E; }
 
         /* Design zone selector */
@@ -398,6 +437,7 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
           text-align: left; transition: all 0.15s;
         }
         .gs-zone-btn:hover  { border-color: rgba(14,14,14,0.15); }
+        .gs-zone-btn:active { transform: scale(0.98); }
         .gs-zone-btn.active { background: #0E0E0E; color: white; border-color: #0E0E0E; }
         .gs-zone-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
@@ -414,16 +454,43 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
           border: none; border-radius: 16px; cursor: pointer;
           transition: background 0.15s; will-change: transform;
         }
-        .gs-select-btn:hover { background: #222; }
+        .gs-select-btn:hover  { background: #222; }
+        .gs-select-btn:active { transform: scale(0.98); }
 
         @media (max-width: 640px) {
           .gs-overlay { padding: 0; align-items: flex-end; }
           .gs-panel {
             grid-template-columns: 1fr; grid-template-rows: auto 1fr;
-            border-radius: 24px 24px 0 0; max-height: 95vh; width: 100%;
+            border-radius: 24px 24px 0 0;
+            max-height: 95vh; max-height: 95dvh;
+            width: 100%;
           }
-          .gs-left  { min-height: 260px; max-height: 280px; }
-          .gs-right { max-height: calc(95vh - 280px); }
+          .gs-left  { min-height: 220px; max-height: 280px; }
+          /* .gs-right no longer needs a manual calc() height — the grid's
+             '1fr' row already gives it the remaining space correctly,
+             regardless of .gs-left's actual rendered height (the old
+             calc(95vh - 280px) silently assumed .gs-left was always
+             exactly 280px, which min-height:260px didn't guarantee). */
+          .gs-right { overflow-y: auto; min-height: 0; }
+
+          /* Image area padding tightened — 2rem each side was right at
+             the edge of overflowing gs-img-wrap's 260px max-width on the
+             smallest common phones (iPhone SE class, 375px wide). */
+          .gs-img-area { padding: 1rem; }
+
+          /* ── Touch targets ──────────────────────────────────────────────
+             Bumped to at or near the ~44px minimum both Apple's and
+             Google's guidelines recommend — these were sized for mouse
+             precision, not fingers. Swatches are the deliberate partial
+             exception: a dense row of many colors at a strict 44px each
+             would consume most of the panel width, and mis-taps between
+             adjacent swatches are low-stakes (easy to correct), unlike a
+             close/nav button. */
+          .gs-close-btn { width: 44px; height: 44px; font-size: 1rem; }
+          .gs-nav-btn   { width: 44px; height: 44px; }
+          .gs-swatch    { width: 36px; height: 36px; }
+          .gs-colors    { gap: 10px; } /* a bit more breathing room at the larger swatch size */
+          .gs-dot       { width: 10px; height: 10px; } /* was 7px — still small on purpose (indicator, not a primary tap target) but easier to hit */
         }
       `}</style>
 
@@ -455,7 +522,7 @@ export function GarmentSelector({ open, onClose, onSelect, current }: Props) {
             </div>
 
             {/* Image */}
-            <div className="gs-img-area">
+            <div className="gs-img-area" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
               <div ref={contentRef}>
                 <GarmentImage src={currentSrc} alt={`${garment.name} — ${view}`} />
               </div>

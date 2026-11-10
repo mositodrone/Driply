@@ -7,8 +7,11 @@ import {
   Scripts,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
+import { NavProgress } from './components/PageLoader'
+import { RootErrorBoundary } from './components/RootErrorBoundary'
 
 import ClerkProvider from '../integrations/clerk/provider'
+import 'driver.js/dist/driver.css'
 
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
@@ -48,6 +51,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
     ],
   }),
+  errorComponent: RootErrorBoundary,
   shellComponent: RootDocument,
   notFoundComponent: NotFoundPage,
 })
@@ -82,6 +86,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
+	<NavProgress />
 	{/* Change v1 to v2 */}
 	<script src="https://js.paystack.co/v2/inline.js"></script>
         <ClerkProvider>

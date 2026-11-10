@@ -10,17 +10,18 @@
 //  - GarmentSelector view toggle extended to front/back/leftArm/rightArm
 // ============================================================
 
+import { useUser } from '@clerk/tanstack-react-start'
+import { auth } from '@clerk/tanstack-react-start/server'
 import { useGSAP } from '@gsap/react'
 import { createFileRoute, redirect, useBlocker } from '@tanstack/react-router'
 import gsap from 'gsap'
 import Flip from 'gsap/Flip'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Layer, Line, Rect, Stage } from 'react-konva'
-import { auth } from '@clerk/tanstack-react-start/server'
-import { useUser } from '@clerk/tanstack-react-start'
 
 import { CanvasToolbar } from './-dashboard/components/CanvasToolbar'
 import { ContextMenu, type ContextMenuGroups } from './-dashboard/components/ContextMenu'
+// import  DesignSubmissionOverlay from './components/DesignSubmissionOverlay'
 import { GarmentNode } from './-dashboard/components/GarmentNode'
 import { ImageNode } from './-dashboard/components/ImageNode'
 import { LeftPanel } from './-dashboard/components/LeftPanel'
@@ -36,27 +37,67 @@ import { uid, type DriplyEl, type ShapeType, type View } from './-dashboard/mode
 
 import type { DesignDraft } from './-dashboard/models/design'
 
+import { createServerFn } from '@tanstack/react-start'
+import { z } from 'zod'
+// import { getDraftById } from '@/lib/actions/design.actions'
+// import { getTutorialStatus } from '@/lib/actions/user.actions'
+// import { DashboardTutorial } from './components/DashboardTutorial'
+import { ExportPreviewModal } from './-dashboard/components/ExportPreviewModal'
 import { GarmentSelector, type GarmentSelection } from './components/GarmentSelector'
 import { OrderFlowOverlay } from './components/OrderFlowOverlay'
-import { createServerFn } from '@tanstack/react-start'
-import { ExportPreviewModal } from './-dashboard/components/ExportPreviewModal'
-import { getColorFilter } from './data/garments'
+import { GARMENT_MAP, getColorFilter } from './data/garments'
 
 gsap.registerPlugin(useGSAP, Flip)
 
-//  protects the rendered page; this is what stops a direct call to the
-//  endpoint from an unauthenticated request. ──────────────────────────────
+// ── Auth gate — called from beforeLoad, matching Clerk's own documented
+//  pattern exactly. Not the same shape as the earlier crash: the raw
+//  auth() call is still safely inside a createServerFn handler either
+//  way — what matters is that constraint, not which lifecycle method
+//  (beforeLoad vs loader) triggers the call.
+const authStateFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const { isAuthenticated, userId } = await auth()
+  if (!isAuthenticated || !userId) {
+    throw redirect({ to: '/sign-in/$', search: { redirect: '/dashboard' } })
+  }
+  return { userId }
+})
+
+// ── Draft fetch — for /my-designs' "Continue Editing" link (?design=X).
+//  Takes userId from beforeLoad's resolved context (via loader's context
+//  param), never re-derives or trusts it from anywhere else. getDraftById
+//  itself also enforces ownership (defense in depth) — null covers both
+//  "doesn't exist" and "exists but isn't yours."
+//
+//  Also piggybacks the tutorial-seen check here rather than a second
+//  server fn — one round trip covers both.
+
+
+// const fetchDraft = createServerFn({ method: 'GET' })
+//   .inputValidator((input: { userId: string; designId?: string }) => input)
+//   .handler(async ({ data }) => {
+//     const hasSeenTutorial = await getTutorialStatus(data.userId)
+//     if (!data.designId) return { draft: null, hasSeenTutorial }
+//     const draft = await getDraftById(data.designId, data.userId)
+//     return { draft, hasSeenTutorial }
+//   })
+
+const dashboardSearchSchema = z.object({
+  design: z.string().optional(),
+})
 
 export const Route = createFileRoute('/dashboard')({
   component: DashboardPage,
-  beforeLoad: async ({ location }) => {
-    const { isAuthenticated } = await auth()
-    if (!isAuthenticated) {
-      throw redirect({ to: '/sign-in', search: { redirect: location.href } })
-    }
-  },
-  loader: async () => { /* TODO: place in my loader */ },
+  validateSearch: dashboardSearchSchema,
+  // FIX: this call was missing entirely — authStateFn was defined above
+  // but never invoked, meaning /dashboard currently has no working auth
+  // gate at all (context.userId was undefined, since nothing populated
+  // route context). Restoring it is what actually protects this route.
+  beforeLoad: async () => await authStateFn(),
+  loaderDeps: ({ search }) => ({ designId: search.design }),
+  // loader: async ({ context, deps }) =>
+  //   await fetchDraft({ data: { userId: context.userId, designId: deps.designId } }),
 })
+
 
 // ── Snap guide threshold (px on canvas) ──────────────────────────────────────
 const SNAP_THRESHOLD = 8
@@ -71,8 +112,20 @@ function DashboardPage() {
   const { user } = useUser()
   const clerkId = user?.id ?? ''
 
+  const { design: requestedDesignId } = Route.useSearch()
+  // const { draft: loadedDraft, hasSeenTutorial } = Route.useLoaderData()
+
   // ── Design ID ─────────────────────────────────────────────────────────────
+  // A ?design=X param (from /my-designs' "Continue Editing" link) takes
+  // priority over whatever's already in sessionStorage — that's an
+  // explicit request to open a specific saved draft, not just resume
+  // whatever this browser tab happened to have active. Falls through to
+  // the previous sessionStorage-or-generate-new behavior when absent.
   const [designId] = useState<string>(() => {
+    if (requestedDesignId) {
+      sessionStorage.setItem('driply_active_design', requestedDesignId)
+      return requestedDesignId
+    }
     const existing = sessionStorage.getItem('driply_active_design')
     if (existing) return existing
     const id = uid()
@@ -112,6 +165,7 @@ function DashboardPage() {
   } = useCanvasDesign()
 
   const [orderOpen,         setOrderOpen]         = useState(false)
+  const [submissionOpen, setSubmissionOpen]       = useState(false)
   const [previewOpen,       setPreviewOpen]        = useState(false)
   const [selectorOpen,      setSelectorOpen]       = useState(false)
   const [activeGarment,     setActiveGarment]      = useState<GarmentSelection | null>(null)
@@ -135,6 +189,12 @@ function DashboardPage() {
   // coords, so this must be rendered outside the zoomed canvasWrapRef.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; elementId: string } | null>(null)
 
+  // Mobile (≤900px) bottom-sheet panel — which of Layers/Properties is
+  // currently open, or neither. See the effect below for the actual
+  // open/close animation + scroll lock.
+  const [mobilePanel, setMobilePanel] = useState<'left' | 'right' | null>(null)
+  const mobileBackdropRef = useRef<HTMLDivElement>(null)
+
   const stageRef      = useRef<any>(null)
   const fileInputRef  = useRef<HTMLInputElement>(null)
   const canvasWrapRef = useRef<HTMLDivElement>(null)
@@ -147,19 +207,58 @@ function DashboardPage() {
   const draftKey = `driply_draft_${designId}`
 
   // ── Restore draft ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(draftKey)
-      if (!raw) return
-      const { elements: saved, view: savedView } = JSON.parse(raw) as DesignDraft
-      if (Array.isArray(saved) && saved.length > 0) {
-        setElements(saved)
-        if (savedView) setView(savedView)
-        showToast('✓ Draft restored')
-      }
-    } catch { /* corrupt — silently ignore */ }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  //  Priority: server-loaded draft (Mongo, via ?design=X) > localStorage
+  //  cache > blank canvas. The server version wins over localStorage
+  //  because localStorage is only a same-browser fast-path cache — if this
+  //  design was last edited on a different device, or this browser's
+  //  cache was cleared, localStorage could hold stale or nonexistent data.
+  // useEffect(() => {
+  //   if (loadedDraft) {
+  //     if (Array.isArray(loadedDraft.elements) && loadedDraft.elements.length > 0) {
+  //       setElements(loadedDraft.elements)
+  //     }
+  //     if (loadedDraft.view) setView(loadedDraft.view)
+
+  //     // Saved garment is a flat snapshot ({id, name, color, size}) — the
+  //     // canvas needs the full catalog object (images per view, emoji,
+  //     // etc.), looked up the same way LeftPanel does.
+  //     const fullGarment = loadedDraft.garment?.id ? GARMENT_MAP[loadedDraft.garment.id] : undefined
+  //     if (fullGarment) {
+  //       setActiveGarment({
+  //         garment: fullGarment,
+  //         color: {
+  //           label:  loadedDraft.garment.color?.label  ?? '',
+  //           hex:    loadedDraft.garment.color?.hex    ?? '',
+  //           filter: loadedDraft.garment.color?.filter ?? '',
+  //         },
+  //         size: loadedDraft.garment.size ?? '',
+  //       })
+  //     }
+
+  //     showToast('✓ Draft loaded')
+  //     return
+  //   }
+
+  //   // Requested a specific draft but it wasn't found (or isn't ours) —
+  //   // say so rather than silently landing on an unexplained blank canvas.
+  //   if (requestedDesignId) {
+  //     showToast('Draft not found — starting a new design')
+  //     return
+  //   }
+
+  //   // No server draft requested — fall back to the same-browser local cache.
+  //   try {
+  //     const raw = localStorage.getItem(draftKey)
+  //     if (!raw) return
+  //     const { elements: saved, view: savedView } = JSON.parse(raw) as DesignDraft
+  //     if (Array.isArray(saved) && saved.length > 0) {
+  //       setElements(saved)
+  //       if (savedView) setView(savedView)
+  //       showToast('✓ Draft restored')
+  //     }
+  //   } catch { /* corrupt — silently ignore */ }
+  // // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [])
 
   // ── Auto-save (debounced 1.2s) ────────────────────────────────────────────
   useEffect(() => {
@@ -228,6 +327,60 @@ function DashboardPage() {
     return () => clearTimeout(serverSyncTimer.current)
   }, [elements, view, syncDraftToServer])
 
+
+  // ── Mobile bottom-sheet open/close ────────────────────────────────────────
+  //  Targets .dash-panel-left/.dash-panel-right via the existing data-dash
+  //  attributes rather than refs threaded through LeftPanel/RightPanel.
+  //  CSS sets the resting closed state (translateY(100%)); GSAP animates
+  //  from there directly via inline style, same pattern as every other
+  //  overlay built this session (GarmentSelector, OrderFlowOverlay, the
+  //  mobile nav menu).
+  useEffect(() => {
+    const leftEl   = document.querySelector('[data-dash="left"]')  as HTMLElement | null
+    const rightEl  = document.querySelector('[data-dash="right"]') as HTMLElement | null
+    const backdrop = mobileBackdropRef.current
+    if (!leftEl || !rightEl || !backdrop) return
+
+    if (mobilePanel) {
+      // Same iOS-safe scroll lock used everywhere else this session —
+      // overflow:hidden alone is a no-op on iOS Safari.
+      const scrollY = window.scrollY
+      document.body.style.position = 'fixed'
+      document.body.style.top      = `-${scrollY}px`
+      document.body.style.width    = '100%'
+
+      const openEl  = mobilePanel === 'left' ? leftEl : rightEl
+      const closeEl = mobilePanel === 'left' ? rightEl : leftEl
+
+      gsap.set(backdrop, { display: 'block' })
+      gsap.set(closeEl, { y: '100%' }) // ensure the other panel snaps shut instantly, no visible cross-fade
+      gsap.to(backdrop, { opacity: 1, duration: 0.25 })
+      gsap.to(openEl,   { y: 0, duration: 0.4, ease: 'power3.out' })
+
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobilePanel(null) }
+      window.addEventListener('keydown', onKey)
+
+      return () => {
+        document.body.style.position = ''
+        document.body.style.top      = ''
+        document.body.style.width    = ''
+        window.scrollTo(0, scrollY)
+        window.removeEventListener('keydown', onKey)
+      }
+    } else {
+      gsap.to(backdrop, {
+        opacity: 0, duration: 0.2,
+        onComplete: () => gsap.set(backdrop, { display: 'none' }),
+      })
+      gsap.to([leftEl, rightEl], { y: '100%', duration: 0.3, ease: 'power2.in' })
+    }
+  }, [mobilePanel])
+
+  // Auto-close the Properties sheet if the user deselects while it's open —
+  // an empty properties panel taking up 75% of the screen serves no purpose.
+  useEffect(() => {
+    if (mobilePanel === 'right' && !selected) setMobilePanel(null)
+  }, [selected, mobilePanel])
 
   // ── Route-leave guard ─────────────────────────────────────────────────────
   useBlocker(
@@ -614,6 +767,8 @@ function DashboardPage() {
         designPreviewUrl={designPreviewUrl}
       />
 
+      {/* <DashboardTutorial hasSeenTutorial={hasSeenTutorial} /> */}
+
       <ExportPreviewModal
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
@@ -623,10 +778,21 @@ function DashboardPage() {
         projectName={projectName}
       />
 
+      {/* <DesignSubmissionOverlay
+        open={submissionOpen}
+        onClose={() => setSubmissionOpen(false)}
+        activeGarment={activeGarment}
+        designId={designId}
+        stageRef={stageRef}
+      /> */}
+
       <TopBar
         projectName={projectName}
         onRename={handleRename}
         onOpenPreview={() => { syncDraftToServer(); setPreviewOpen(true) }}
+        hasGarment={!!activeGarment}
+        hasElements={elements.length > 0}
+        onOpenSubmission={() => setSubmissionOpen(true)}
         onOpenFlow={openOrderFlow}
         hasUnsaved={hasUnsaved}
         savedAt={savedAt}
@@ -843,6 +1009,32 @@ function DashboardPage() {
           selected={selected}
           onChange={attrs => selectedId && updateElement(selectedId, attrs)}
         />
+      </div>
+
+      {/*
+        ── Mobile bottom-sheet controls (≤900px) ─────────────────────────────
+        LeftPanel/RightPanel render .dash-panel-left/.dash-panel-right
+        internally — targeted here via the existing data-dash="left"/"right"
+        attributes (same stable hooks DashboardTutorial already uses) rather
+        than threading refs through those components. Hidden above 900px via
+        CSS (.dash-mobile-fabs only has rules inside that media query).
+      */}
+      <div ref={mobileBackdropRef} className="dash-mobile-backdrop" onClick={() => setMobilePanel(null)} />
+      <div className="dash-mobile-fabs">
+        <button
+          className={`dash-mobile-fab ${mobilePanel === 'left' ? 'active' : ''}`}
+          onClick={() => setMobilePanel(p => p === 'left' ? null : 'left')}
+        >
+          🗂 Layers
+        </button>
+        <button
+          className={`dash-mobile-fab ${mobilePanel === 'right' ? 'active' : ''}`}
+          onClick={() => setMobilePanel(p => p === 'right' ? null : 'right')}
+          disabled={!selected}
+          style={!selected ? { opacity: 0.4 } : undefined}
+        >
+          ⚙ Edit{selected ? '' : ' (select something)'}
+        </button>
       </div>
 
       {/*

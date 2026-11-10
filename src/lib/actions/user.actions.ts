@@ -100,6 +100,35 @@ export async function deleteUser(clerkId: string) {
 	}
 }
 
+// ── ONBOARDING TUTORIAL ────────────────────────────────────────────────────────
+// Deliberately non-throwing (unlike getUserById) — this backs a "should we
+// show a tour" decision on every dashboard load, not a critical data read.
+// If the Clerk webhook hasn't finished syncing a brand-new user yet (a real
+// possible race), the dashboard should still render, just without the tour
+// that turn, rather than break on a missing User doc.
+export async function getTutorialStatus(clerkId: string): Promise<boolean> {
+	try {
+		await connectToDatabase();
+		const user = await User.findOne({ clerkId }, { hasSeenTutorial: 1 });
+		return user?.hasSeenTutorial ?? false;
+	} catch (error) {
+		console.error("[getTutorialStatus]", error);
+		return false; // fail open to "not seen" — worst case, tour shows once more
+	}
+}
+
+export async function markTutorialSeen(clerkId: string): Promise<void> {
+	try {
+		await connectToDatabase();
+		await User.findOneAndUpdate(
+			{ clerkId },
+			{ $set: { hasSeenTutorial: true } },
+		);
+	} catch (error) {
+		console.error("[markTutorialSeen]", error);
+		// Non-fatal — worst case the tour shows again next login, not harmful.
+	}
+}
 // ── INCREMENT ORDER STATS ─────────────────────────────────────────────────────
 // Called after a Paystack payment is verified and the order is saved.
 // amountKobo = total in kobo (Paystack's unit — divide by 100 for naira display)

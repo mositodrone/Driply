@@ -56,7 +56,7 @@ function ColorPicker({
         <div className="w-7 h-7 rounded-lg flex-shrink-0 border border-white/10"
           style={{ background: value }} />
         <input className="dash-prop-input flex-1"
-          value={value} maxLength={7} placeholder="#FFFFFF"
+          value={value} maxLength={20} placeholder="#FFFFFF"
           onChange={e => onChange(e.target.value)} />
       </div>
     </div>

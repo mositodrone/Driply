@@ -51,11 +51,17 @@ export async function saveDraft(params: SaveDraftParams) {
 }
 
 // ── GET SINGLE DRAFT ──────────────────────────────────────────────────────────
-export async function getDraftById(designId: string) {
+// clerkId is required and enforced — this previously had no ownership check
+// at all, meaning any authenticated user who knew (or guessed) another
+// user's designId could load their full draft, elements included. Returns
+// null both for "doesn't exist" and "exists but isn't yours" — deliberately
+// not distinguishing the two in the response, so this can't be used to
+// probe which designIds are valid for other accounts.
+export async function getDraftById(designId: string, clerkId: string) {
   try {
     await connectToDatabase()
 
-    const draft = await Design.findOne({ designId })
+    const draft = await Design.findOne({ designId, clerkId })
     if (!draft) return null
 
     return JSON.parse(JSON.stringify(draft))

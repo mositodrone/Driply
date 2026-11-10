@@ -13,7 +13,9 @@ import { Route as MyDesignsRouteImport } from './routes/my-designs'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SignInSplatRouteImport } from './routes/sign-in/$'
+import { Route as OrdersRefRouteImport } from './routes/orders/$ref'
 import { Route as ApiDesignsRouteImport } from './routes/api/designs'
+import { Route as ApiSubmissionsRouteRouteImport } from './routes/api/submissions/route'
 import { Route as ApiWebhooksPaystackRouteImport } from './routes/api/webhooks/paystack'
 import { Route as ApiWebhooksClerkRouteImport } from './routes/api/webhooks/clerk'
 import { Route as ApiPaymentsInitializeRouteImport } from './routes/api/payments/initialize'
@@ -39,9 +41,19 @@ const SignInSplatRoute = SignInSplatRouteImport.update({
   path: '/sign-in/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrdersRefRoute = OrdersRefRouteImport.update({
+  id: '/orders/$ref',
+  path: '/orders/$ref',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDesignsRoute = ApiDesignsRouteImport.update({
   id: '/api/designs',
   path: '/api/designs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSubmissionsRouteRoute = ApiSubmissionsRouteRouteImport.update({
+  id: '/api/submissions',
+  path: '/api/submissions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiWebhooksPaystackRoute = ApiWebhooksPaystackRouteImport.update({
@@ -69,7 +81,9 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/my-designs': typeof MyDesignsRoute
+  '/api/submissions': typeof ApiSubmissionsRouteRoute
   '/api/designs': typeof ApiDesignsRoute
+  '/orders/$ref': typeof OrdersRefRoute
   '/sign-in/$': typeof SignInSplatRoute
   '/api/orders/confirm': typeof ApiOrdersConfirmRoute
   '/api/payments/initialize': typeof ApiPaymentsInitializeRoute
@@ -80,7 +94,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/my-designs': typeof MyDesignsRoute
+  '/api/submissions': typeof ApiSubmissionsRouteRoute
   '/api/designs': typeof ApiDesignsRoute
+  '/orders/$ref': typeof OrdersRefRoute
   '/sign-in/$': typeof SignInSplatRoute
   '/api/orders/confirm': typeof ApiOrdersConfirmRoute
   '/api/payments/initialize': typeof ApiPaymentsInitializeRoute
@@ -92,7 +108,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/my-designs': typeof MyDesignsRoute
+  '/api/submissions': typeof ApiSubmissionsRouteRoute
   '/api/designs': typeof ApiDesignsRoute
+  '/orders/$ref': typeof OrdersRefRoute
   '/sign-in/$': typeof SignInSplatRoute
   '/api/orders/confirm': typeof ApiOrdersConfirmRoute
   '/api/payments/initialize': typeof ApiPaymentsInitializeRoute
@@ -105,7 +123,9 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/my-designs'
+    | '/api/submissions'
     | '/api/designs'
+    | '/orders/$ref'
     | '/sign-in/$'
     | '/api/orders/confirm'
     | '/api/payments/initialize'
@@ -116,7 +136,9 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/my-designs'
+    | '/api/submissions'
     | '/api/designs'
+    | '/orders/$ref'
     | '/sign-in/$'
     | '/api/orders/confirm'
     | '/api/payments/initialize'
@@ -127,7 +149,9 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/my-designs'
+    | '/api/submissions'
     | '/api/designs'
+    | '/orders/$ref'
     | '/sign-in/$'
     | '/api/orders/confirm'
     | '/api/payments/initialize'
@@ -139,7 +163,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
   MyDesignsRoute: typeof MyDesignsRoute
+  ApiSubmissionsRouteRoute: typeof ApiSubmissionsRouteRoute
   ApiDesignsRoute: typeof ApiDesignsRoute
+  OrdersRefRoute: typeof OrdersRefRoute
   SignInSplatRoute: typeof SignInSplatRoute
   ApiOrdersConfirmRoute: typeof ApiOrdersConfirmRoute
   ApiPaymentsInitializeRoute: typeof ApiPaymentsInitializeRoute
@@ -177,11 +203,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignInSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/orders/$ref': {
+      id: '/orders/$ref'
+      path: '/orders/$ref'
+      fullPath: '/orders/$ref'
+      preLoaderRoute: typeof OrdersRefRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/designs': {
       id: '/api/designs'
       path: '/api/designs'
       fullPath: '/api/designs'
       preLoaderRoute: typeof ApiDesignsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/submissions': {
+      id: '/api/submissions'
+      path: '/api/submissions'
+      fullPath: '/api/submissions'
+      preLoaderRoute: typeof ApiSubmissionsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/webhooks/paystack': {
@@ -219,7 +259,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
   MyDesignsRoute: MyDesignsRoute,
+  ApiSubmissionsRouteRoute: ApiSubmissionsRouteRoute,
   ApiDesignsRoute: ApiDesignsRoute,
+  OrdersRefRoute: OrdersRefRoute,
   SignInSplatRoute: SignInSplatRoute,
   ApiOrdersConfirmRoute: ApiOrdersConfirmRoute,
   ApiPaymentsInitializeRoute: ApiPaymentsInitializeRoute,

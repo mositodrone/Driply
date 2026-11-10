@@ -34,6 +34,7 @@ import {
   useCallback, useEffect,useMemo, 
   useRef, useState, type RefObject,
 } from 'react'
+import video from "../../public/demo.mp4"
 
 gsap.registerPlugin(useGSAP, ScrollTrigger,  ScrollToPlugin)
 
@@ -197,7 +198,25 @@ function useLenis() {
 }
 
 
-const VIDEO_URL = '/demo.mp4'   // ← replace with your actual video URL
+// VideoModal component (above the Hero function)
+
+// VIDEO URL OPTIONS (fill in whichever you use):
+//
+//   Cloudinary (recommended — consistent with the Driply asset strategy):
+//     const VIDEO_URL = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_auto,q_auto/driply-demo.mp4`
+//
+//   YouTube embed (best for bandwidth — no CDN cost):
+//     <iframe src="https://www.youtube.com/embed/YOUR_VIDEO_ID?autoplay=1" .../>
+//     Replace the <video> tag below with the iframe version if you go this route.
+//
+//   Direct file (simplest for a short screencap):
+//     const VIDEO_URL = '/demo.mp4'   // put it in /public
+//
+// Start with whichever is quickest to get up — the modal works with any source.
+
+
+
+const VIDEO_URL = video   // ← replace with your actual video URL
 
 function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -440,7 +459,7 @@ function getForeground(bg: string): { base: string; isLight: boolean } {
 // Replace the existing ShirtSVG function in index.tsx with this version.
 // The prop signature is identical — no call sites need changing.
 // ─────────────────────────────────────────────────────────────────────────────
-function ShirtSVG({ color = '#2ECEFF', collar = '#1AAFEA', size = 340 }) {
+function ShirtSVG({ color = '#2ECEFF', collar = '#1AAFEA', size = 640 }) {
   const { base, isLight } = getForeground(color)
 
   // Foreground tokens — all derived from a single luminance check
@@ -553,6 +572,64 @@ function Nav() {
   const logoRef  = useRef<HTMLAnchorElement>(null)
   const [dark, setDark] = useState(true) // starts on dark hero
 
+  // ── Mobile menu ──────────────────────────────────────────────────────────
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const menuRef    = useRef<HTMLDivElement>(null)
+  const backdropRef= useRef<HTMLDivElement>(null)
+  const barsRef    = useRef<(HTMLSpanElement | null)[]>([])
+
+  useEffect(() => {
+    if (!mobileOpen) return
+
+    // Same iOS-safe scroll lock used in GarmentSelector/OrderFlowOverlay —
+    // overflow:hidden alone is a no-op on iOS Safari.
+    const scrollY = window.scrollY
+    document.body.style.position = 'fixed'
+    document.body.style.top      = `-${scrollY}px`
+    document.body.style.width    = '100%'
+
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false) }
+    window.addEventListener('keydown', onKey)
+
+    return () => {
+      document.body.style.position = ''
+      document.body.style.top      = ''
+      document.body.style.width    = ''
+      window.scrollTo(0, scrollY)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [mobileOpen])
+
+  // Menu open/close animation, and hamburger → X morph
+  useGSAP(() => {
+    if (!menuRef.current || !backdropRef.current) return
+    const bars = barsRef.current
+
+    if (mobileOpen) {
+      gsap.set(menuRef.current, { display: 'flex' })
+      gsap.fromTo(backdropRef.current, { opacity: 0 }, { opacity: 1, duration: 0.25 })
+      gsap.fromTo(menuRef.current,
+        { y: -16, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.35, ease: 'power3.out' }
+      )
+      gsap.from('.mnav-link-item', {
+        y: -12, opacity: 0, stagger: 0.05, duration: 0.4, ease: 'power3.out', delay: 0.1,
+      })
+      gsap.to(bars[0], { rotate: 45,  y: 6,  duration: 0.25, ease: 'power2.out' })
+      gsap.to(bars[1], { opacity: 0,          duration: 0.15 })
+      gsap.to(bars[2], { rotate: -45, y: -6, duration: 0.25, ease: 'power2.out' })
+    } else {
+      gsap.to(backdropRef.current, { opacity: 0, duration: 0.2 })
+      gsap.to(menuRef.current, {
+        y: -16, opacity: 0, duration: 0.25, ease: 'power2.in',
+        onComplete: () => gsap.set(menuRef.current, { display: 'none' }),
+      })
+      gsap.to(bars[0], { rotate: 0, y: 0, duration: 0.25, ease: 'power2.out' })
+      gsap.to(bars[1], { opacity: 1,       duration: 0.2, delay: 0.1 })
+      gsap.to(bars[2], { rotate: 0, y: 0, duration: 0.25, ease: 'power2.out' })
+    }
+  }, { dependencies: [mobileOpen], scope: navRef })
+
   useGSAP(() => {
     // Stagger links in on mount
     gsap.from('.nav-link-item', {
@@ -601,7 +678,7 @@ function Nav() {
       </a>
 
       <ul className="hidden lg:flex items-center gap-10 list-none m-0 p-0">
-        {[['How it works','#process'],['Features','#features'],['Products','#garments'],['Pricing','#pricing']].map(([l,h])=>(
+        {[['How it works','#process'],['Features','#features'],['Products','#garments'],['My Designs','/my-designs']].map(([l,h])=>(
           <li key={h} className="nav-link-item">
             <a href={h}
               className={`nav-link-text ${dark ? 'text-white/60 hover:text-white' : 'text-[#3A3A3A] hover:text-[#0E0E0E]'}`}
@@ -613,13 +690,27 @@ function Nav() {
         ))}
       </ul>
 
-      <div className="nav-cta-wrap flex items-center gap-3 justify-end">
+      {/* Hamburger — mobile/tablet only. Below lg:, the <ul> above is hidden
+          with nothing replacing it currently — this is that replacement. */}
+      <button
+        aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+        aria-expanded={mobileOpen}
+        onClick={() => setMobileOpen(o => !o)}
+        className="lg:hidden flex flex-col justify-center items-center gap-[5px] w-11 h-11 -mr-2 z-50 relative"
+      >
+        {[0,1,2].map(i => (
+          <span key={i}
+            ref={el => { barsRef.current[i] = el }}
+            className="block w-6 h-[2px] rounded-full"
+            style={{ background: dark ? 'white' : '#0E0E0E', transition: 'background 0.3s' }}
+          />
+        ))}
+      </button>
+
+      <div className="nav-cta-wrap hidden lg:flex items-center gap-3 justify-end">
         {/* isLoaded guard prevents the button tree from mounting/unmounting
             mid-interaction while Clerk resolves the auth state on first render */}
-        {!isLoaded ? (
-          // Invisible placeholder keeps the nav layout stable while loading
-          <div style={{ width: 180, height: 36 }} />
-        ) : isSignedIn ? (
+        {isSignedIn ? (
           <>
             <Link to="/dashboard" className="btn-nav-primary">
               Go to Studio →
@@ -684,6 +775,63 @@ function Nav() {
           </>
         )}
       </div>
+
+      {/* ── Mobile menu — backdrop + dropdown panel ── */}
+      <div
+        ref={backdropRef}
+        onClick={() => setMobileOpen(false)}
+        style={{ display: 'none', opacity: 0 }}
+        className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+      />
+      <div
+        ref={menuRef}
+        style={{ display: 'none', background: '#0E0E0E' }}
+        className="lg:hidden fixed top-0 left-0 right-0 z-40 flex-col pt-24 pb-8 px-6 gap-1 border-b border-white/10"
+      >
+        {[['How it works','#process'],['Features','#features'],['Products','#garments'],['My Designs','/my-designs']].map(([l,h])=>(
+          <a key={h} href={h}
+            onClick={() => setMobileOpen(false)}
+            className="mnav-link-item text-white/75 hover:text-white text-base font-medium py-3.5 border-b border-white/[0.06]"
+          >
+            {l}
+          </a>
+        ))}
+
+        <div className="mnav-link-item flex flex-col gap-3 mt-6">
+          {isSignedIn ? (
+            <>
+              <Link to="/dashboard" onClick={() => setMobileOpen(false)} className="btn-nav-primary text-center">
+                Go to Studio →
+              </Link>
+              <div className="flex justify-center pt-1">
+                <UserButton
+                  appearance={{
+                    elements: {
+                      avatarBox: { width: 40, height: 40, borderRadius: '10px', border: '2px solid rgba(255,91,58,0.5)' },
+                      userButtonPopoverCard: { borderRadius: '16px', background: '#1A1A1A', border: '1px solid rgba(255,255,255,0.08)' },
+                      userButtonPopoverActionButton: { color: 'rgba(255,255,255,0.7)', borderRadius: '10px', fontSize: '0.85rem' },
+                      userButtonPopoverActionButtonText: { color: 'rgba(255,255,255,0.7)' },
+                      userButtonPopoverFooter: { display: 'none' },
+                    },
+                    variables: { colorPrimary: '#FF5B3A', colorBackground: '#1A1A1A', colorText: '#F8F5EF', borderRadius: '10px' },
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <SignInButton mode="modal">
+                <button onClick={() => setMobileOpen(false)} className="btn-nav-ghost border-white/20 text-white/70 hover:border-white hover:text-white w-full">
+                  Log in
+                </button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button onClick={() => setMobileOpen(false)} className="btn-nav-primary w-full">Start designing →</button>
+              </SignUpButton>
+            </>
+          )}
+        </div>
+      </div>
     </nav>
   )
 }
@@ -694,6 +842,7 @@ function Hero() {
   const shirtRef   = useRef<HTMLDivElement>(null)
   const [activeColor, setActiveColor] = useState(0)
   const active = SWATCHES[activeColor]
+  const [demoOpen, setDemoOpen] = useState(false)
 
   // Mouse parallax on shirt
   useEffect(() => {
@@ -901,16 +1050,16 @@ function Hero() {
               </SignUpButton>
             </div>
             <div className="hero-cta-item">
-  <button
-    className="btn-hero-ghost"
-    onClick={() => setDemoOpen(true)}
-    onMouseEnter={e => gsap.to(e.currentTarget, { scale: 1.04, duration: 0.2, ease: 'power2.out' })}
-    onMouseLeave={e => gsap.to(e.currentTarget, { scale: 1, duration: 0.3, ease: 'driply-pop' })}
-  >
-    <span className="play-circle">▶</span>
-    Watch demo
-  </button>
-</div>
+              <button
+                className="btn-hero-ghost"
+                onClick={() => setDemoOpen(true)}
+                onMouseEnter={e => gsap.to(e.currentTarget, { scale: 1.04, duration: 0.2, ease: 'power2.out' })}
+                onMouseLeave={e => gsap.to(e.currentTarget, { scale: 1, duration: 0.3, ease: 'driply-pop' })}
+              >
+                <span className="play-circle">▶</span>
+                Watch demo
+              </button>
+            </div>
           </div>
 
           {/* Stats */}
@@ -933,7 +1082,7 @@ function Hero() {
             className="hero-shirt-wrap"
             style={{ transformStyle: 'preserve-3d', perspective: '800px' }}
           >
-            <ShirtSVG color={active.bg} collar={active.collar} size={380}/>
+            <ShirtSVG color={active.bg} collar={active.collar} size={580}/>
           </div>
 
           {/* Floating badges */}
@@ -973,6 +1122,8 @@ function Hero() {
         </div>
         <span>Scroll</span>
       </div>
+
+    <VideoModal open={demoOpen} onClose={() => setDemoOpen(false)} />
     </section>
   )
 }
@@ -1033,6 +1184,14 @@ function Process() {
   const sectionRef = useRef<HTMLElement>(null)
 
   useGSAP(() => {
+    // The crossfade animation requires every .process-step-panel to be
+    // position:absolute (all stacked in the same spot, faded between).
+    // Mobile CSS correctly moves them to position:static (normal stacked
+    // flow). Those two models are mutually exclusive — disable the whole
+    // scroll-jacking interaction below 768px and let all steps render
+    // as a normal visible list instead.
+    if (window.matchMedia('(max-width: 768px)').matches) return
+
     const steps = gsap.utils.toArray<HTMLElement>('.process-step-panel')
     const n     = steps.length
     let   current = 0
@@ -1257,7 +1416,7 @@ function Garments() {
     <section ref={sectionRef} id="garments" data-nav-bg="#F8F5EF"
       style={{ background: '#F8F5EF', overflow: 'hidden' }}>
 
-      <div style={{ padding: '5rem 4rem 2rem' }}>
+      <div className="px-6 sm:px-10 lg:px-16" className="rp-pad-lg" style={{ paddingTop: '5rem', paddingBottom: '2rem' }}>
         <div className="sect-eyebrow">What you can design on</div>
         <div className="garments-heading" style={{ overflow: 'hidden' }}>
           <h2 className="garments-h2">
@@ -1275,8 +1434,8 @@ function Garments() {
       </div>
 
       <div style={{ overflow: 'hidden', paddingBottom: '4rem' }}>
-        <div ref={trackRef}
-          style={{ display: 'flex', gap: '1.25rem', padding: '1rem 4rem', width: 'max-content' }}>
+        <div ref={trackRef} className="rp-pad-lg"
+          style={{ display: 'flex', gap: '1.25rem', paddingTop: '1rem', paddingBottom: '1rem', width: 'max-content' }}>
           {GARMENTS.map((g, i) => (
             <div key={i} className="garment-hcard"
               style={{ width: 260, aspectRatio: '3/4', borderRadius: 20,
@@ -1346,7 +1505,7 @@ function DashPreview() {
   const heading = 'The dashboard'
 
   return (
-    <section ref={sectionRef} data-nav-bg="#F8F5EF" style={{ padding: '7rem 4rem', background: '#F8F5EF' }}>
+    <section ref={sectionRef} data-nav-bg="#F8F5EF" className="rp-section" style={{ background: '#F8F5EF' }}>
       <div className="sect-eyebrow">Design studio</div>
       <div className="dash-preview-heading" style={{ overflow: 'hidden', marginBottom: '0.75rem' }}>
         <h2 className="dash-h2">
@@ -1364,10 +1523,12 @@ function DashPreview() {
       </p>
 
       <div className="dash-preview-card" style={{
-        background:'#1A1A1B',borderRadius:28,overflow:'hidden',
+        background:'#1A1A1B',borderRadius:28,
+        overflowX:'auto', overflowY:'hidden',
         border:'1px solid rgba(255,255,255,0.05)',
         boxShadow:'0 40px 100px rgba(0,0,0,0.3)',
       }}>
+        <div style={{ minWidth: 620 }}>
         {/* Mac-style topbar */}
         <div style={{ background:'#252525',padding:'0.85rem 1.5rem',
           display:'flex',alignItems:'center',justifyContent:'space-between',
@@ -1485,6 +1646,7 @@ function DashPreview() {
             ))}
           </div>
         </div>
+        </div>
       </div>
     </section>
   )
@@ -1508,7 +1670,7 @@ function Testimonials() {
   const heading = 'Built for your kind of order.'
 
   return (
-    <section ref={sectionRef} data-nav-bg="#0E0E0E" style={{ background: '#0E0E0E', padding: '7rem 4rem' }}>
+    <section ref={sectionRef} data-nav-bg="#0E0E0E" className="rp-section" style={{ background: '#0E0E0E' }}>
       <div className="sect-eyebrow" style={{ color: 'rgba(255,255,255,0.35)' }}>Who it's for</div>
 
       <div className="wif-heading" style={{ overflow: 'hidden', marginBottom: '4rem' }}>
@@ -1712,8 +1874,8 @@ function Footer() {
   }
 
   return (
-    <footer style={{ background: '#0E0E0E', padding: '4rem 4rem 2.5rem' }} data-nav-bg="#0E0E0E">
-      <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:'3rem',marginBottom:'3.5rem' }}>
+    <footer className="rp-pad-lg" style={{ background: '#0E0E0E', paddingTop: '4rem', paddingBottom: '2.5rem' }} data-nav-bg="#0E0E0E">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr] gap-8 lg:gap-12 mb-12 lg:mb-14">
         <div>
           <div style={{ fontFamily:'Syne,sans-serif',fontSize:'1.5rem',fontWeight:800,
             color:'white',letterSpacing:'-0.03em',marginBottom:'1rem' }}>
@@ -1839,6 +2001,40 @@ export default function DriplyLanding() {
         }
         .nav-link-text { font-size: 0.875rem; font-weight: 500; text-decoration: none; letter-spacing: 0.01em; transition: color 0.2s; display: inline-block; }
         .nav-cta-wrap { display: flex; align-items: center; gap: 0.85rem; justify-content: flex-end; }
+        @media (max-width: 1023px) { .nav-cta-wrap { display: none; } }
+
+        /* ── Responsive layout utilities — raw un-layered CSS ──────────────────
+           Tailwind v4 wraps its utilities inside cascade layers. Un-layered CSS
+           always wins regardless of specificity, so Tailwind px- / py- / grid-cols- classNames lose to any un-layered rule in this file. These classes are
+           defined here (un-layered, same block) so they win the same fight. */
+        .rp-pad-lg  { padding-left: 1.5rem; padding-right: 1.5rem; }
+        .rp-section { padding-left: 1.5rem; padding-right: 1.5rem; padding-top: 4rem; padding-bottom: 4rem; }
+        @media (min-width: 640px)  {
+          .rp-pad-lg, .rp-section { padding-left: 2.5rem; padding-right: 2.5rem; }
+        }
+        @media (min-width: 1024px) {
+          .rp-pad-lg, .rp-section { padding-left: 4rem; padding-right: 4rem; }
+          .rp-section { padding-top: 7rem; padding-bottom: 7rem; }
+        }
+        /* Footer grid */
+        .rp-footer-grid { display: grid; grid-template-columns: 1fr; gap: 2rem; margin-bottom: 3rem; }
+        @media (min-width: 640px)  { .rp-footer-grid { grid-template-columns: 1fr 1fr; gap: 2.5rem; } }
+        @media (min-width: 1024px) { .rp-footer-grid { grid-template-columns: 2fr 1fr 1fr 1fr; gap: 3rem; margin-bottom: 3.5rem; } }
+        /* DashPreview centering */
+        .dash-preview-card { max-width: 1100px; margin-left: auto; margin-right: auto; }
+        /* Hero stats — fix: base rule below was silently overriding mobile gap because
+           it appears later in the same un-layered block, winning by source order */
+        .hero-stats { display: flex; gap: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.75rem; }
+        @media (max-width: 768px) { .hero-stats { flex-wrap: wrap; gap: 1.5rem; } }
+        @media (max-width: 480px) { .hero-stats { gap: 1.25rem; } }
+        /* Process mobile — hide frozen step-indicator elements (JS that drives
+           them never runs on mobile since the scroll-jacking is disabled below
+           768px), add spacing between stacked panels */
+        @media (max-width: 768px) {
+          .process-big-num, .process-progress-track, .process-accent-bar { display: none; }
+          .process-step-panel { margin-bottom: 3rem; padding-bottom: 2rem; border-bottom: 1px solid rgba(14,14,14,0.08); }
+          .process-step-panel:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+        }
         .btn-nav-ghost {
           font-size: 0.875rem; font-weight: 500;
           border-width: 1.5px; border-style: solid;
@@ -1866,7 +2062,7 @@ export default function DriplyLanding() {
           display: grid; grid-template-columns: 1fr 1fr;
           min-height: 100vh; padding-top: 7rem; position: relative; z-index: 2;
         }
-/* ── Tablet (≤1024px) ────────────────────────────────────────────────────────
+/* ── Tablet (≤1024px) ── */
         @media (max-width: 1024px) {
           .hero-inner {
             gap: 1.5rem;
@@ -1884,7 +2080,7 @@ export default function DriplyLanding() {
           }
         }
 
-/* ── Mobile (≤768px) — the main layout change ────────────────────────────────
+/* ── Mobile (≤768px) — the main layout change ── */
         @media (max-width: 768px) {
           .hero-inner {
             flex-direction: column;        /* if using flex */
@@ -1964,7 +2160,7 @@ fits a 375px phone with room to spare, but tighten other spacing. */
           }
 
           .hero-shirt-wrap svg {
-            width: 220px !important;
+            width: 320px !important;
           }
 
           .hero-swatch-strip {
@@ -2170,6 +2366,25 @@ fits a 375px phone with room to spare, but tighten other spacing. */
           font-size: 1rem; font-weight: 300; color: #3A3A3A; max-width: 520px; line-height: 1.7;
         }
 
+        @media (max-width: 768px) {
+          .process-section {
+            grid-template-columns: 1fr;
+            min-height: auto; /* 100vh on a stacked layout pushes content far below the fold */
+          }
+          .process-left {
+            border-right: none;
+            border-bottom: 1px solid rgba(14,14,14,0.08);
+            padding: 3rem 1.5rem 2rem;
+          }
+          .process-big-num { font-size: 4rem; margin-bottom: 1.25rem; } /* was 8rem — overwhelmed a phone screen */
+          .process-right { padding: 2.5rem 1.5rem 3rem; }
+          .process-step-panel {
+            position: static; /* was absolute+centered — depended on process-right's height, which now varies with stacked content */
+            transform: none;
+          }
+          .process-overline { font-size: clamp(2rem, 10vw, 2.5rem); margin-bottom: 1.25rem; }
+        }
+
         /* ── Features ── */
         .features-section { padding: 7rem 4rem; background: #F8F5EF; }
         .sect-eyebrow {
@@ -2184,6 +2399,14 @@ fits a 375px phone with room to spare, but tighten other spacing. */
         .features-heading-line { display: block; }
         .features-sub { font-size: 1.05rem; font-weight: 300; color: #3A3A3A; line-height: 1.65; }
         .features-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 1.25rem; }
+
+        @media (max-width: 768px) {
+          .features-section { padding: 4rem 1.5rem; }
+          .features-heading-wrap { grid-template-columns: 1fr; gap: 1rem; align-items: start; }
+        }
+        @media (max-width: 480px) {
+          .features-grid { grid-template-columns: 1fr; } /* 2-up was too cramped for icon+title+body cards on the narrowest phones */
+        }
         .feat-clip-card {
           border-radius: 24px; padding: 2.25rem; cursor: default;
           transition: transform 0.25s; will-change: clip-path;
@@ -3553,7 +3776,7 @@ fits a 375px phone with room to spare, but tighten other spacing. */
 
 //   return (
 //     <footer style={{ background: '#0E0E0E', padding: '4rem 4rem 2.5rem' }}>
-//       <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:'3rem',marginBottom:'3.5rem' }}>
+//       <div className="rp-footer-grid">
 //         <div>
 //           <div style={{ fontFamily:'Syne,sans-serif',fontSize:'1.5rem',fontWeight:800,
 //             color:'white',letterSpacing:'-0.03em',marginBottom:'1rem' }}>
